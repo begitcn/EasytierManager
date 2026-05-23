@@ -96,8 +96,7 @@ bash build-release.sh
 > ```bash
 > sudo xattr -dr com.apple.quarantine /Applications/EasyTierManager.app
 > ```
->
-> 此问题仅出现在 GitHub Actions CI 构建的 DMG 安装版本中。通过 Homebrew 安装或本地构建的版本不受影响。
+
 
 ---
 
