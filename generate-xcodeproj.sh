@@ -13,5 +13,6 @@ if ! command -v xcodegen &> /dev/null; then
     exit 1
 fi
 
-xcodegen generate --project EasyTierManager.xcodeproj
+rm -rf EasyTierManager.xcodeproj
+xcodegen generate
 echo "✅ Xcode project generated: EasyTierManager.xcodeproj"
