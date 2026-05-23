@@ -5,9 +5,10 @@ import EasyTierHelperShared
 class EasyTierService: ObservableObject {
     static let shared = EasyTierService()
 
-    @Published private(set) var runningNetworks: [String: Int] = [:]
+    @Published private(set) var activeConfigs: [String] = []
     @Published private(set) var isConnecting = false
 
+    private var coreProcessPID: Int?
     private let helperManager = EasyTierHelperManager.shared
 
     private var helpersPath: String { Bundle.main.bundlePath + "/Contents/Helpers" }
@@ -32,55 +33,68 @@ class EasyTierService: ObservableObject {
         isConnecting = true
         defer { isConnecting = false }
 
-        let args = ["--daemon", "-c", configPath]
+        activeConfigs.append(configPath)
 
-        return try await withCheckedThrowingContinuation { continuation in
-            proxy.startProcess(executablePath: corePath, arguments: args) { success, pid, error in
-                Task { @MainActor in
-                    if success && pid > 0 {
-                        self.runningNetworks[configPath] = pid
-                        continuation.resume()
-                    } else {
-                        continuation.resume(throwing: EasyTierError.startFailed(error ?? "Unknown error"))
-                    }
-                }
-            }
+        if let pid = coreProcessPID {
+            try await stopProcessSafely(pid: pid, proxy: proxy)
+        }
+
+        do {
+            let newPid = try await launchCore(proxy: proxy)
+            coreProcessPID = newPid
+        } catch {
+            activeConfigs.removeLast()
+            throw error
         }
     }
 
     func stopNetwork(configPath: String) async throws {
         let proxy = try await getProxy()
 
-        if let pid = runningNetworks[configPath] {
-            try await stopProcess(pid: pid, proxy: proxy)
-            runningNetworks.removeValue(forKey: configPath)
+        guard let index = activeConfigs.firstIndex(of: configPath) else {
             return
         }
 
-        let processes = try await findProcess(configPath: configPath, proxy: proxy)
-        guard let firstProc = processes.first,
-              let pidStr = firstProc.components(separatedBy: .whitespaces).first,
-              let pid = Int(pidStr)
-        else { return }
+        activeConfigs.remove(at: index)
 
-        try await stopProcess(pid: pid, proxy: proxy)
-        runningNetworks.removeValue(forKey: configPath)
+        guard let pid = coreProcessPID else {
+            return
+        }
+
+        if activeConfigs.isEmpty {
+            try await stopProcessSafely(pid: pid, proxy: proxy)
+            coreProcessPID = nil
+        } else {
+            let originalConfigs = activeConfigs
+            try await stopProcessSafely(pid: pid, proxy: proxy)
+            coreProcessPID = nil
+
+            do {
+                let newPid = try await launchCore(proxy: proxy)
+                coreProcessPID = newPid
+            } catch {
+                activeConfigs = originalConfigs
+                throw error
+            }
+        }
     }
 
     func checkNetworkStatus(configPath: String) async throws -> Bool {
-        let proxy = try await getProxy()
-
-        if let pid = runningNetworks[configPath] {
-            return try await withCheckedThrowingContinuation { continuation in
-                proxy.isProcessRunning(pid: pid) { isRunning in
-                    if !isRunning { self.runningNetworks.removeValue(forKey: configPath) }
-                    continuation.resume(returning: isRunning)
-                }
-            }
+        guard activeConfigs.contains(configPath), let pid = coreProcessPID else {
+            return false
         }
 
-        let processes = try await findProcess(configPath: configPath, proxy: proxy)
-        return !processes.isEmpty
+        let proxy = try await getProxy()
+        return try await withCheckedThrowingContinuation { continuation in
+            proxy.isProcessRunning(pid: pid) { isRunning in
+                if !isRunning {
+                    Task { @MainActor in
+                        self.coreProcessPID = nil
+                    }
+                }
+                continuation.resume(returning: isRunning)
+            }
+        }
     }
 
     func getPeerList() async throws -> [NetworkNode] {
@@ -117,7 +131,28 @@ class EasyTierService: ObservableObject {
         }
     }
 
-    private func stopProcess(pid: Int, proxy: EasyTierHelperProtocol) async throws {
+    // MARK: - Private
+
+    private func launchCore(proxy: EasyTierHelperProtocol) async throws -> Int {
+        var args = ["--daemon"]
+        for config in activeConfigs {
+            args += ["-c", config]
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            proxy.startProcess(executablePath: corePath, arguments: args) { success, pid, error in
+                Task { @MainActor in
+                    if success && pid > 0 {
+                        continuation.resume(returning: Int(pid))
+                    } else {
+                        continuation.resume(throwing: EasyTierError.startFailed(error ?? "Unknown error"))
+                    }
+                }
+            }
+        }
+    }
+
+    private func stopProcessSafely(pid: Int, proxy: EasyTierHelperProtocol) async throws {
         try await withCheckedThrowingContinuation { continuation in
             proxy.stopProcess(pid: pid) { success, error in
                 if success {
@@ -127,13 +162,25 @@ class EasyTierService: ObservableObject {
                 }
             }
         }
-    }
 
-    private func findProcess(configPath: String, proxy: EasyTierHelperProtocol) async throws -> [String] {
-        let pattern = "easytier-core.*\(configPath)"
-        return try await withCheckedThrowingContinuation { continuation in
-            proxy.findProcess(pattern: pattern) { results in
-                continuation.resume(returning: results)
+        let startTime = Date()
+        while Date().timeIntervalSince(startTime) < 5.0 {
+            let isRunning = try await withCheckedThrowingContinuation { continuation in
+                proxy.isProcessRunning(pid: pid) { running in
+                    continuation.resume(returning: running)
+                }
+            }
+            if !isRunning { return }
+            try await Task.sleep(nanoseconds: 200_000_000)
+        }
+
+        try await withCheckedThrowingContinuation { continuation in
+            proxy.forceStopProcess(pid: pid) { success, error in
+                if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: EasyTierError.stopFailed(error ?? "Force kill failed"))
+                }
             }
         }
     }

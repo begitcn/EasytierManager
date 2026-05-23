@@ -55,6 +55,16 @@ private final class EasyTierHelperService: NSObject, EasyTierHelperProtocol {
         completion(result == 0)
     }
 
+    func forceStopProcess(pid: Int, completion: @escaping (Bool, String?) -> Void) {
+        let result = kill(pid_t(pid), SIGKILL)
+        if result == 0 {
+            completion(true, nil)
+        } else {
+            let errorStr = String(cString: strerror(errno))
+            completion(false, errorStr)
+        }
+    }
+
     func findProcess(pattern: String, completion: @escaping ([String]) -> Void) {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
