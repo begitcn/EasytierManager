@@ -1,0 +1,20 @@
+// swift-tools-version: 5.7
+// This Package.swift is for opening the project in Xcode.
+// For building, run: `bash generate-xcodeproj.sh` then open the .xcodeproj.
+import PackageDescription
+
+let package = Package(
+    name: "EasyTierManager",
+    platforms: [
+        .macOS(.v13)
+    ],
+    dependencies: [],
+    targets: [
+        .executableTarget(
+            name: "EasyTierManager",
+            dependencies: [],
+            path: "Sources/EasyTierManager",
+            exclude: ["Resources"]
+        )
+    ]
+)
