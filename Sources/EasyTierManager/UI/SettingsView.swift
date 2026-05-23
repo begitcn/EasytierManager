@@ -7,12 +7,26 @@ struct SettingsView: View {
     @State private var autoConnectOnLaunch = false
     @State private var isCheckingUpdate = false
 
-    @State private var easytierVersion: String = "1.0.0"
+    @State private var easytierVersion: String = ""
     @State private var appVersion: String = Bundle.main.shortVersion
     @State private var appBuild: String = Bundle.main.buildStr
 
     @State private var updateAvailable = false
     @State private var latestVersion = ""
+    @State private var isDownloading = false
+    @State private var downloadError: String?
+
+    private var helpersPath: String {
+        Bundle.main.bundlePath + "/Contents/Helpers"
+    }
+
+    private var arch: String {
+        #if arch(arm64)
+        return "aarch64"
+        #else
+        return "x86_64"
+        #endif
+    }
 
     var body: some View {
         ScrollView {
@@ -24,7 +38,7 @@ struct SettingsView: View {
                                 .opacity(0.6)
                                 .frame(width: 140, alignment: .leading)
 
-                            Text(easytierVersion)
+                            Text(easytierVersion.isEmpty ? "检测中..." : easytierVersion)
                                 .font(.system(.body, design: .monospaced))
 
                             Spacer()
@@ -40,25 +54,61 @@ struct SettingsView: View {
                             }
                             .buttonStyle(.plain)
                             .foregroundColor(.accentColor)
-                            .disabled(isCheckingUpdate)
+                            .disabled(isCheckingUpdate || isDownloading)
                         }
                         .padding()
                         .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
 
-                        if updateAvailable {
+                        if isDownloading {
+                            HStack {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                    .frame(width: 16, height: 16)
+                                Text("正在下载更新...")
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                            }
+                            .padding()
+                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                        }
+
+                        if let error = downloadError {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.red)
+                                Text(error)
+                                    .foregroundColor(.red)
+                                    .font(.caption)
+                                Spacer()
+                            }
+                            .padding()
+                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                        }
+
+                        if updateAvailable && !isDownloading {
                             HStack {
                                 Image(systemName: "arrow.down.circle.fill")
                                     .foregroundColor(.blue)
                                 Text("版本 \(latestVersion) 可用")
                                     .foregroundColor(.blue)
                                 Spacer()
-                                Button("下载") {
-                                    if let url = URL(string: "https://github.com/EasyTier/EasyTier/releases") {
-                                        NSWorkspace.shared.open(url)
-                                    }
+                                Button("下载并更新") {
+                                    downloadUpdate()
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .controlSize(.small)
+                            }
+                            .padding()
+                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                        }
+
+                        if !easytierVersion.isEmpty && !updateAvailable && !isDownloading {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("已是最新版本")
+                                    .foregroundColor(.green)
+                                Spacer()
                             }
                             .padding()
                             .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
@@ -157,19 +207,54 @@ struct SettingsView: View {
                     }
                 }
 
-            HStack {
-                Spacer()
-                Text("EasyTier")
-                    .font(.footnote)
-                    .opacity(0.5)
-                Spacer()
-            }
+                HStack {
+                    Spacer()
+                    Text("EasyTier")
+                        .font(.footnote)
+                        .opacity(0.5)
+                    Spacer()
+                }
             }
             .padding()
         }
         .labelsHidden()
         .toggleStyle(.switch)
         .background(NSColor.background1.color)
+        .onAppear(perform: detectEasytierVersion)
+    }
+
+    private func detectEasytierVersion() {
+        let corePath = helpersPath + "/easytier-core"
+        guard FileManager.default.isExecutableFile(atPath: corePath) else {
+            easytierVersion = "未安装"
+            return
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: corePath)
+        process.arguments = ["--version"]
+
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = output
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            let outputStr = String(data: data, encoding: .utf8) ?? ""
+
+            let version = outputStr
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .components(separatedBy: .whitespacesAndNewlines)
+                .first?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+            easytierVersion = version.isEmpty ? "未知" : version
+        } catch {
+            easytierVersion = "未知"
+        }
     }
 
     private func checkForUpdates() {
@@ -193,10 +278,75 @@ struct SettingsView: View {
 
                 latestVersion = tagName
                 let current = easytierVersion
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
                 let latest = tagName.replacingOccurrences(of: "v", with: "")
 
                 updateAvailable = current.compare(latest, options: .numeric) == .orderedAscending
             }
         }.resume()
+    }
+
+    private func downloadUpdate() {
+        isDownloading = true
+        downloadError = nil
+
+        let version = latestVersion.replacingOccurrences(of: "v", with: "")
+        let zipName = "easytier-macos-\(arch)-v\(version).zip"
+        guard let url = URL(string: "https://github.com/EasyTier/EasyTier/releases/download/\(latestVersion)/\(zipName)") else {
+            downloadError = "无效的下载地址"
+            isDownloading = false
+            return
+        }
+
+        Task {
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+
+                let tempDir = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("easytier-update-\(UUID().uuidString)")
+                defer { try? FileManager.default.removeItem(at: tempDir) }
+
+                try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+                let zipPath = tempDir.appendingPathComponent("easytier.zip")
+                try data.write(to: zipPath)
+
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+                process.arguments = ["-o", zipPath.path, "-d", tempDir.path]
+                try process.run()
+                process.waitUntilExit()
+
+                let extractedDir = tempDir.appendingPathComponent("easytier-macos-\(arch)")
+                let helpersURL = URL(fileURLWithPath: helpersPath)
+
+                let coreDst = helpersURL.appendingPathComponent("easytier-core")
+                let cliDst = helpersURL.appendingPathComponent("easytier-cli")
+
+                try? FileManager.default.removeItem(at: coreDst)
+                try? FileManager.default.removeItem(at: cliDst)
+
+                try FileManager.default.copyItem(
+                    at: extractedDir.appendingPathComponent("easytier-core"), to: coreDst)
+                try FileManager.default.copyItem(
+                    at: extractedDir.appendingPathComponent("easytier-cli"), to: cliDst)
+
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o755], ofItemAtPath: coreDst.path)
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o755], ofItemAtPath: cliDst.path)
+
+                await MainActor.run {
+                    easytierVersion = "v\(version)"
+                    updateAvailable = false
+                    isDownloading = false
+                }
+            } catch {
+                await MainActor.run {
+                    downloadError = error.localizedDescription
+                    isDownloading = false
+                }
+            }
+        }
     }
 }

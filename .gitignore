@@ -11,6 +11,8 @@ DerivedData/
 # Build
 .build/
 build/
+dist/
+Helpers/
 
 # IDE
 *.swp

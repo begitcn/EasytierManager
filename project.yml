@@ -34,3 +34,14 @@ targets:
         CFBundleIconName: AppIcon
     entitlements:
       path: Resources/Signing.entitlements
+    postCompileScripts:
+      - name: "Embed EasyTier Helpers"
+        script: |
+          SRC="${SRCROOT}/Helpers"
+          DST="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Helpers"
+          if [ -f "$SRC/easytier-core" ] && [ -f "$SRC/easytier-cli" ]; then
+            mkdir -p "$DST"
+            cp "$SRC/easytier-core" "$SRC/easytier-cli" "$DST/"
+            chmod +x "$DST/easytier-core" "$DST/easytier-cli"
+          fi
+        basedOnDependencyAnalysis: false
