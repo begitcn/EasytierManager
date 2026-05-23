@@ -2,7 +2,6 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var easyTierService: EasyTierService
-    @State private var isLaunchAtLogin = false
     @State private var autoConnectOnLaunch = false
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var isCheckingUpdate = false
@@ -185,7 +184,10 @@ struct SettingsView: View {
                 SettingsSection(title: "系统") {
                     VStack(spacing: 0) {
                         HStack {
-                            Toggle("", isOn: $isLaunchAtLogin)
+                            Toggle("", isOn: Binding(
+                                get: { appSettings.isLaunchAtLogin },
+                                set: { appSettings.setLaunchAtLogin($0) }
+                            ))
                             Text("开机启动")
                             Spacer()
                         }

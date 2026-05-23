@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import ServiceManagement
 
 @MainActor
 class AppSettings: ObservableObject {
@@ -7,6 +8,7 @@ class AppSettings: ObservableObject {
 
     @Published var showMenuBarIcon: Bool
     @Published var showDockIcon: Bool
+    @Published var isLaunchAtLogin: Bool
     @Published var toggleWarning: String?
 
     private let defaults = UserDefaults.standard
@@ -21,6 +23,7 @@ class AppSettings: ObservableObject {
             showMenuBarIcon = menuBar
             showDockIcon = dock
         }
+        isLaunchAtLogin = defaults.object(forKey: "isLaunchAtLogin") as? Bool ?? false
     }
 
     func setMenuBarIcon(_ value: Bool) {
@@ -43,9 +46,28 @@ class AppSettings: ObservableObject {
         applyActivationPolicy()
     }
 
+    func setLaunchAtLogin(_ value: Bool) {
+        isLaunchAtLogin = value
+        save()
+        applyLaunchAtLogin()
+    }
+
     private func save() {
         defaults.set(showMenuBarIcon, forKey: "showMenuBarIcon")
         defaults.set(showDockIcon, forKey: "showDockIcon")
+        defaults.set(isLaunchAtLogin, forKey: "isLaunchAtLogin")
+    }
+
+    private func applyLaunchAtLogin() {
+        do {
+            if isLaunchAtLogin {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            print("Failed to update login item: \(error)")
+        }
     }
 
     func applyActivationPolicy() {
