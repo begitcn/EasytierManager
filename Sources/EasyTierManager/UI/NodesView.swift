@@ -136,55 +136,7 @@ struct NodesView: View {
                         .background(NSColor.background2.color)
 
                         ForEach(filteredNodes) { node in
-                            HStack {
-                                Text(node.name)
-                                    .frame(width: 200, alignment: .leading)
-                                    .lineLimit(1)
-
-                                HStack(spacing: 4) {
-                                    Text(node.ipv4)
-                                        .font(.system(.body, design: .monospaced))
-                                        .lineLimit(1)
-
-                                    Button(action: {
-                                        copyToClipboard(node.ipv4)
-                                    }) {
-                                        Image(systemName: "doc.on.doc")
-                                            .font(.system(size: 10))
-                                    }
-                                    .buttonStyle(.plain)
-                                    .opacity(0.4)
-                                    .help("复制 IPv4")
-                                }
-                                .frame(width: 200, alignment: .leading)
-
-                                Text(node.latency.map { "\($0)ms" } ?? "-")
-                                    .frame(width: 100, alignment: .trailing)
-                                    .opacity(node.latency != nil ? 1 : 0.3)
-
-                                Spacer()
-
-                                Menu {
-                                    Button(action: { copyToClipboard(node.ipv4) }) {
-                                        Label("复制 IPv4", systemImage: "doc.on.doc")
-                                    }
-                                    if let ipv6 = node.ipv6 {
-                                        Button(action: { copyToClipboard(ipv6) }) {
-                                            Label("复制 IPv6", systemImage: "doc.on.doc")
-                                        }
-                                    }
-                                } label: {
-                                    Image(systemName: "ellipsis.circle")
-                                        .font(.system(size: 14))
-                                }
-                                .buttonStyle(.plain)
-                                .frame(width: 80, alignment: .center)
-                            }
-                            .font(.system(size: 12))
-                            .padding(.horizontal)
-                            .padding(.vertical, 6)
-                            .background(NSColor.background1.color)
-                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                            NodeRowView(node: node, onCopy: copyToClipboard)
                         }
                     }
                 }
@@ -259,5 +211,60 @@ struct NodesView: View {
                 copiedAlert = false
             }
         }
+    }
+}
+
+private struct NodeRowView: View {
+    let node: NetworkNode
+    let onCopy: (String) -> Void
+
+    var body: some View {
+        HStack {
+            Text(node.name)
+                .frame(width: 200, alignment: .leading)
+                .lineLimit(1)
+
+            HStack(spacing: 4) {
+                Text(node.ipv4)
+                    .font(.system(.body, design: .monospaced))
+                    .lineLimit(1)
+
+                Button(action: { onCopy(node.ipv4) }) {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.plain)
+                .opacity(0.4)
+                .help("复制 IPv4")
+            }
+            .frame(width: 200, alignment: .leading)
+
+            Text(node.latency != nil ? "\(node.latency!)ms" : "-")
+                .frame(width: 100, alignment: .trailing)
+                .opacity(node.latency != nil ? 1 : 0.3)
+
+            Spacer()
+
+            Menu {
+                Button(action: { onCopy(node.ipv4) }) {
+                    Label("复制 IPv4", systemImage: "doc.on.doc")
+                }
+                if let ipv6 = node.ipv6 {
+                    Button(action: { onCopy(ipv6) }) {
+                        Label("复制 IPv6", systemImage: "doc.on.doc")
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 14))
+            }
+            .buttonStyle(.plain)
+            .frame(width: 80, alignment: .center)
+        }
+        .font(.system(size: 12))
+        .padding(.horizontal)
+        .padding(.vertical, 6)
+        .background(node.isLocal ? Color(NSColor.selectedContentBackgroundColor.withAlphaComponent(0.15)) : NSColor.background1.color)
+        .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
     }
 }

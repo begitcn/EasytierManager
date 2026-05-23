@@ -223,19 +223,31 @@ class EasyTierService: ObservableObject {
               let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         else { return parsePeerText(json) }
 
-        return jsonArray.compactMap { dict -> NetworkNode? in
-            guard let name = dict["hostname"] as? String ?? dict["peer_id"] as? String,
-                  let ipv4 = dict["virtual_ipv4"] as? String ?? dict["ipv4"] as? String
-            else { return nil }
+        return jsonArray.flatMap { instance -> [NetworkNode] in
+            guard let result = instance["result"] as? [[String: Any]] else { return [] }
+            return result.compactMap { dict -> NetworkNode? in
+                guard let name = dict["hostname"] as? String ?? dict["peer_id"] as? String,
+                      let ipv4 = dict["ipv4"] as? String
+                else { return nil }
 
-            return NetworkNode(
-                name: name,
-                ipv4: ipv4,
-                ipv6: dict["virtual_ipv6"] as? String ?? dict["ipv6"] as? String,
-                status: .online,
-                latency: dict["latency_us"] as? Int ?? dict["latency_ms"] as? Int,
-                networkId: UUID()
-            )
+                let latency: Int? = {
+                    if let latStr = dict["lat_ms"] as? String ?? dict["latency_ms"] as? String,
+                       latStr != "-" {
+                        return Int(Double(latStr) ?? 0)
+                    }
+                    return nil
+                }()
+
+                return NetworkNode(
+                    name: name,
+                    ipv4: ipv4,
+                    ipv6: dict["virtual_ipv6"] as? String ?? dict["ipv6"] as? String,
+                    status: .online,
+                    latency: latency,
+                    networkId: UUID(),
+                    isLocal: (dict["cost"] as? String) == "Local"
+                )
+            }
         }
     }
 

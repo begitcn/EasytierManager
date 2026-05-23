@@ -83,8 +83,21 @@ class EasyTierHelperManager: ObservableObject {
                            userInfo: [NSLocalizedDescriptionKey: "安装失败: \(message)"])
         }
 
-        try connectToHelper()
-        isHelperConnected = true
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+
+        for i in 0..<3 {
+            do {
+                try connectToHelper()
+                isHelperConnected = true
+                return
+            } catch {
+                if i < 2 {
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                } else {
+                    throw error
+                }
+            }
+        }
     }
 
     var proxy: AnyObject? {

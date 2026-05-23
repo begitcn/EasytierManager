@@ -17,7 +17,7 @@ struct SettingsView: View {
     @State private var isDownloading = false
     @State private var downloadError: String?
 
-    @State private var isHelperConnected = false
+    @ObservedObject private var helperManager = EasyTierHelperManager.shared
     @State private var isInstallingHelper = false
     @State private var helperError: String?
 
@@ -43,7 +43,7 @@ struct SettingsView: View {
                                 .opacity(0.6)
                                 .frame(width: 140, alignment: .leading)
 
-                            if EasyTierHelperManager.shared.isHelperConnected {
+                            if helperManager.isHelperConnected {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.green)
                                 Text("已连接")
@@ -296,7 +296,6 @@ struct SettingsView: View {
         Task {
             do {
                 try await EasyTierHelperManager.shared.reinstallHelper()
-                isHelperConnected = EasyTierHelperManager.shared.isHelperConnected
             } catch {
                 helperError = error.localizedDescription
             }
@@ -329,6 +328,7 @@ struct SettingsView: View {
             let version = outputStr
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .components(separatedBy: .whitespacesAndNewlines)
+                .dropFirst()
                 .first?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 

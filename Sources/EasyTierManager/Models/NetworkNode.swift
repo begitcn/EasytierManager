@@ -8,6 +8,7 @@ struct NetworkNode: Identifiable {
     var status: NodeStatus
     var latency: Int?
     var networkId: UUID
+    var isLocal: Bool
 
     enum NodeStatus: String {
         case online
@@ -15,7 +16,7 @@ struct NetworkNode: Identifiable {
         case unknown
     }
 
-    init(id: UUID = UUID(), name: String, ipv4: String, ipv6: String? = nil, status: NodeStatus = .unknown, latency: Int? = nil, networkId: UUID) {
+    init(id: UUID = UUID(), name: String, ipv4: String, ipv6: String? = nil, status: NodeStatus = .unknown, latency: Int? = nil, networkId: UUID, isLocal: Bool = false) {
         self.id = id
         self.name = name
         self.ipv4 = ipv4
@@ -23,5 +24,6 @@ struct NetworkNode: Identifiable {
         self.status = status
         self.latency = latency
         self.networkId = networkId
+        self.isLocal = isLocal
     }
 }
