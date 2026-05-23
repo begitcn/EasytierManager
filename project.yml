@@ -45,3 +45,4 @@ targets:
             chmod +x "$DST/easytier-core" "$DST/easytier-cli"
           fi
         basedOnDependencyAnalysis: false
+
