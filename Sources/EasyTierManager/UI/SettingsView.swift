@@ -260,11 +260,11 @@ struct SettingsView: View {
                             Text("GitHub")
                                 .opacity(0.6)
                                 .frame(width: 140, alignment: .leading)
-                            Text("github.com/EasyTier/EasyTier")
+                            Text("github.com/begitcn/EasytierManager")
                                 .foregroundColor(.accentColor)
                             Spacer()
                             Button(action: {
-                                if let url = URL(string: "https://github.com/EasyTier/EasyTier") {
+                                if let url = URL(string: "https://github.com/begitcn/EasytierManager") {
                                     NSWorkspace.shared.open(url)
                                 }
                             }) {
@@ -281,11 +281,11 @@ struct SettingsView: View {
                             Text("报告问题")
                                 .opacity(0.6)
                                 .frame(width: 140, alignment: .leading)
-                            Text("github.com/EasyTier/EasyTier/issues")
+                            Text("github.com/begitcn/EasytierManager/issues")
                                 .foregroundColor(.accentColor)
                             Spacer()
                             Button(action: {
-                                if let url = URL(string: "https://github.com/EasyTier/EasyTier/issues") {
+                                if let url = URL(string: "https://github.com/begitcn/EasytierManager/issues") {
                                     NSWorkspace.shared.open(url)
                                 }
                             }) {
