@@ -58,14 +58,14 @@ targets:
             HELPER_BIN="${SRCROOT}/.build/release/EasyTierHelper"
           fi
 
-          HELPER_PLIST_SRC="${SRCROOT}/Resources/com.easytier.manager.helper.plist"
+          HELPER_PLIST_SRC="${SRCROOT}/Resources/EasyTierHelper.plist"
           HELPER_TOOLS_DIR="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/HelperTools"
           HELPER_DAEMONS_DIR="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons"
 
           if [ -f "$HELPER_BIN" ]; then
             mkdir -p "$HELPER_TOOLS_DIR"
-            cp "$HELPER_BIN" "$HELPER_TOOLS_DIR/com.easytier.manager.helper"
-            chmod +x "$HELPER_TOOLS_DIR/com.easytier.manager.helper"
+            cp "$HELPER_BIN" "$HELPER_TOOLS_DIR/EasyTierHelper"
+            chmod +x "$HELPER_TOOLS_DIR/EasyTierHelper"
 
             mkdir -p "$HELPER_DAEMONS_DIR"
             cp "$HELPER_PLIST_SRC" "$HELPER_DAEMONS_DIR/"

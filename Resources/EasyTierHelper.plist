@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.easytier.manager.helper</string>
+	<string>EasyTierHelper</string>
 	<key>MachServices</key>
 	<dict>
-		<key>com.easytier.manager.helper</key>
+		<key>EasyTierHelper</key>
 		<true/>
 	</dict>
 	<key>BundleProgram</key>
-	<string>Contents/Library/HelperTools/com.easytier.manager.helper</string>
+	<string>Contents/Library/HelperTools/EasyTierHelper</string>
 </dict>
 </plist>

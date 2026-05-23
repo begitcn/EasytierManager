@@ -1,9 +1,9 @@
 import Foundation
 
 public enum EasyTierHelperConstants {
-    public static let machServiceName = "com.easytier.manager.helper"
-    public static let daemonPlistName = "com.easytier.manager.helper.plist"
-    public static let helperBundleProgram = "Contents/Library/HelperTools/com.easytier.manager.helper"
+    public static let machServiceName = "EasyTierHelper"
+    public static let daemonPlistName = "EasyTierHelper.plist"
+    public static let helperBundleProgram = "Contents/Library/HelperTools/EasyTierHelper"
     public static let allowedClientBundleIdentifier = "com.easytier.manager"
     public static let allowedClientRequirement = "identifier \"\(allowedClientBundleIdentifier)\""
     public static let helperVersion = "1.0.0"
