@@ -56,7 +56,16 @@ EasyTierManager 是一个纯 AI Vibe Coding 产物，全部代码由 AI 生成�
 
 从 [GitHub Releases](https://github.com/EasyTier/EasyTierManager/releases) 下载对应架构的 `.dmg` 文件，挂载后将 `EasyTierManager.app` 拖入 `/Applications`。
 
-### 构建安装
+> CI 仅自动发布 Apple Silicon (arm64) 版本。Intel 用户请使用 Homebrew 安装或参考下方「本地构建」自行打包。
+
+### Homebrew
+
+```bash
+brew tap begitcn/homebrew-tap
+brew install --cask easytiermanager
+```
+
+### 本地构建
 
 ```bash
 # 克隆仓库

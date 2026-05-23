@@ -2,13 +2,13 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: $0 --version V --aarch64-sha SHA --x86_64-sha SHA"
+  echo "Usage: $0 --version V --aarch64-sha SHA [--x86_64-sha SHA]"
   exit 1
 }
 
 VERSION=""
 AARCH64_SHA=""
-X86_64_SHA=""
+X86_64_SHA="0000000000000000000000000000000000000000000000000000000000000000"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -19,7 +19,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [ -z "$VERSION" ] || [ -z "$AARCH64_SHA" ] || [ -z "$X86_64_SHA" ]; then
+if [ -z "$VERSION" ] || [ -z "$AARCH64_SHA" ]; then
   usage
 fi
 
