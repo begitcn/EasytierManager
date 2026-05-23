@@ -239,37 +239,46 @@ class EasyTierService: ObservableObject {
               let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         else { return parsePeerText(json) }
 
-        return jsonArray.flatMap { instance -> [NetworkNode] in
-            guard let result = instance["result"] as? [[String: Any]] else { return [] }
-            let instanceName = instance["instance_name"] as? String ?? ""
-            let networkId = networkMap[instanceName] ?? UUID()
-            return result.compactMap { dict -> NetworkNode? in
-                guard let name = dict["hostname"] as? String ?? dict["peer_id"] as? String,
-                      let ipv4 = dict["ipv4"] as? String
-                else { return nil }
+        let defaultNetworkId = networkMap.values.first ?? UUID()
 
-                let latency: Int? = {
-                    if let latStr = dict["lat_ms"] as? String ?? dict["latency_ms"] as? String,
-                       latStr != "-" {
-                        return Int(Double(latStr) ?? 0)
-                    }
-                    return nil
-                }()
-
-                let cost = dict["cost"] as? String
-
-                return NetworkNode(
-                    name: name,
-                    ipv4: ipv4,
-                    ipv6: dict["virtual_ipv6"] as? String ?? dict["ipv6"] as? String,
-                    status: .online,
-                    latency: latency,
-                    networkId: networkId,
-                    isLocal: cost == "Local",
-                    cost: cost
-                )
+        return jsonArray.flatMap { element -> [NetworkNode] in
+            if let result = element["result"] as? [[String: Any]] {
+                let instanceName = element["instance_name"] as? String ?? ""
+                let networkId = networkMap[instanceName] ?? defaultNetworkId
+                return result.compactMap { parsePeerNode($0, networkId: networkId) }
             }
+            if let node = parsePeerNode(element, networkId: defaultNetworkId) {
+                return [node]
+            }
+            return []
         }
+    }
+
+    private func parsePeerNode(_ dict: [String: Any], networkId: UUID) -> NetworkNode? {
+        guard let name = dict["hostname"] as? String ?? dict["peer_id"] as? String,
+              let ipv4 = dict["ipv4"] as? String
+        else { return nil }
+
+        let latency: Int? = {
+            if let latStr = dict["lat_ms"] as? String ?? dict["latency_ms"] as? String,
+               latStr != "-" {
+                return Int(Double(latStr) ?? 0)
+            }
+            return nil
+        }()
+
+        let cost = dict["cost"] as? String
+
+        return NetworkNode(
+            name: name,
+            ipv4: ipv4,
+            ipv6: dict["virtual_ipv6"] as? String ?? dict["ipv6"] as? String,
+            status: .online,
+            latency: latency,
+            networkId: networkId,
+            isLocal: cost == "Local",
+            cost: cost
+        )
     }
 
     private func parsePeerText(_ text: String) -> [NetworkNode] {

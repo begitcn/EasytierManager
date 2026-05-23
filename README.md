@@ -81,6 +81,36 @@ bash build-release.sh
 # 执行后可以在 dist/ 目录找到 DMG 安装包
 ```
 
+## 卸载
+
+### DMG 安装卸载
+
+```bash
+# 退出应用
+killall EasyTierManager 2>/dev/null
+
+# 卸载特权助手
+sudo /Applications/EasyTierManager.app/Contents/Library/HelperTools/EasyTierHelper unload 2>/dev/null
+sudo rm -f /Library/PrivilegedHelperTools/EasyTierHelper
+sudo rm -f /Library/LaunchDaemons/EasyTierHelper.plist
+
+# 删除应用
+rm -rf /Applications/EasyTierManager.app
+
+# 删除配置文件
+rm -rf ~/Library/Application\ Support/com.easytier.manager/
+rm -rf ~/Library/Caches/com.easytier.manager/
+rm -rf ~/Library/Preferences/com.easytier.manager.plist
+```
+
+### Homebrew 安装卸载
+
+```bash
+brew uninstall --cask easytiermanager
+```
+
+之后请参考上方 DMG 卸载中的步骤手动清理残余文件（配置文件、缓存、特权助手等）。
+
 ## 开发
 
 ```bash
@@ -126,6 +156,22 @@ EasyTier 二进制下载后缓存在 `~/Library/Caches/com.easytier.manager/easy
 ### macOS 提示“无法验证开发者”
 
 将应用放到 `/Applications` 后，打开 **系统设置 → 隐私与安全性**，点击「仍要打开」。
+
+### 打开提示“已损坏”，无法打开
+
+这是由于应用未经 Apple 公证，macOS Gatekeeper 会拦截。终端执行以下命令移除隔离标记即可：
+
+```bash
+sudo xattr -d com.apple.quarantine /Applications/EasyTierManager.app
+```
+
+如果上述命令无效（通常是因为 `.app` 内含子文件也被标记了隔离），请使用递归版本：
+
+```bash
+sudo xattr -dr com.apple.quarantine /Applications/EasyTierManager.app
+```
+
+> 此问题仅出现在 GitHub Actions CI 构建的版本中。通过 Homebrew 安装或本地构建的版本不受影响。
 
 ### 核心二进制未找到
 

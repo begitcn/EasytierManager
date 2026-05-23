@@ -49,6 +49,24 @@ struct ConnectionsView: View {
             }
         }
         .background(NSColor.background1.color)
+        .onChange(of: selectedNetwork) { _ in reloadDetailConfig() }
+        .confirmationDialog("确认删除", isPresented: .init(
+            get: { deleteConfirmationTarget != nil },
+            set: { if !$0 { deleteConfirmationTarget = nil } }
+        )) {
+            if let network = deleteConfirmationTarget {
+                Button("删除", role: .destructive) {
+                    deleteNetwork(network)
+                }
+                Button("取消", role: .cancel) {
+                    deleteConfirmationTarget = nil
+                }
+            }
+        } message: {
+            if let network = deleteConfirmationTarget {
+                Text("确定要删除「\(network.name)」吗？此操作不可恢复。")
+            }
+        }
         .alert("错误", isPresented: $showError) {
             Button("确定", role: .cancel) {}
         } message: {
@@ -89,23 +107,32 @@ struct ConnectionsView: View {
 
             Divider()
 
-            HStack(spacing: 8) {
+            HStack(spacing: 0) {
                 Button(action: startCreating) {
-                    Label("新建", systemImage: "plus")
-                        .frame(maxWidth: .infinity)
+                    Image(systemName: "plus")
+                        .font(.system(size: 16))
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .frame(maxWidth: .infinity)
 
                 Button(action: startEditing) {
-                    Label("编辑", systemImage: "pencil")
-                        .frame(maxWidth: .infinity)
+                    Image(systemName: "pencil")
+                        .font(.system(size: 16))
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
+                .frame(maxWidth: .infinity)
                 .disabled(selectedNetwork == nil || isEditing)
 
-                Spacer()
+                Button(action: confirmDelete) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 16))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity)
+                .disabled(selectedNetwork == nil || isEditing)
 
                 Button(action: toggleConnection) {
                     Image(systemName: isSelectedConnected ? "stop.fill" : "play.fill")
@@ -113,6 +140,7 @@ struct ConnectionsView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
+                .frame(maxWidth: .infinity)
                 .disabled(selectedNetwork == nil || connectingNetworkId != nil || isEditing)
             }
             .padding(.horizontal, 12)
@@ -181,14 +209,19 @@ struct ConnectionsView: View {
                                     .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
                             }
                             if !config.listeners.isEmpty {
-                                detailRow(label: "监听地址", value: config.listeners[0])
-                                    .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-                                if config.listeners.count > 1 {
-                                    ForEach(1..<config.listeners.count, id: \.self) { i in
-                                        detailRow(label: "", value: config.listeners[i])
-                                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                                HStack(alignment: .top) {
+                                    Text("监听地址")
+                                        .opacity(0.6)
+                                        .frame(width: 100, alignment: .leading)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        ForEach(config.listeners, id: \.self) { addr in
+                                            Text(addr)
+                                        }
                                     }
+                                    Spacer()
                                 }
+                                .padding()
+                                .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
                             }
                         }
                     }
@@ -214,18 +247,32 @@ struct ConnectionsView: View {
                             }
                         }
                         .buttonStyle(SectionButtonStyle())
+                        .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+
+                        Button(action: { confirmDeleteNetwork(network) }) {
+                            HStack {
+                                Image(systemName: "trash")
+                                    .foregroundColor(.red)
+                                Text("删除")
+                                    .foregroundColor(.red)
+                                Spacer()
+                            }
+                        }
+                        .buttonStyle(SectionButtonStyle())
                     }
                 }
             }
             .padding()
         }
         .id(network.id)
-        .onAppear {
-            loadDetailConfig(for: network)
-        }
     }
 
-    private func loadDetailConfig(for network: VirtualNetwork) {
+    private func reloadDetailConfig() {
+        guard let id = selectedNetwork,
+              let network = networkStore.networks.first(where: { $0.id == id }) else {
+            detailConfig = nil
+            return
+        }
         let url = URL(fileURLWithPath: network.configPath)
         if FileManager.default.fileExists(atPath: url.path) {
             detailConfig = try? EasyTierConfig.parse(from: url)
@@ -250,8 +297,16 @@ struct ConnectionsView: View {
     private var configEditorView: some View {
         ScrollView {
             VStack(spacing: 18) {
-                Text(editingNetwork != nil ? "编辑网络" : "新建网络")
-                    .font(.headline)
+                HStack {
+                    Text(editingNetwork != nil ? "编辑网络" : "新建网络")
+                        .font(.headline)
+                    Spacer()
+                    Button(action: importConfig) {
+                        Label("导入配置", systemImage: "folder")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
 
                 SettingsSection(title: "基础设置") {
                     VStack(spacing: 0) {
@@ -328,13 +383,6 @@ struct ConnectionsView: View {
 
                 VStack(spacing: 12) {
                     HStack(spacing: 8) {
-                        Button(action: importConfig) {
-                            Label("导入配置", systemImage: "folder")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-
                         Button(action: saveEditor) {
                             Label("保存", systemImage: "checkmark")
                                 .frame(maxWidth: .infinity)
@@ -379,12 +427,16 @@ struct ConnectionsView: View {
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.plainText, .yaml, .init(filenameExtension: "toml") ?? .plainText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard let config = try? EasyTierConfig.parse(from: url) else {
+        guard var config = try? EasyTierConfig.parse(from: url) else {
             errorMessage = "无法解析配置文件"
             showError = true
             return
         }
+        if config.listeners.isEmpty {
+            config.listeners = defaultListeners()
+        }
         editConfig = config
+        editAutoConnect = true
         peerUri = config.peers.first ?? ""
     }
 
@@ -392,6 +444,11 @@ struct ConnectionsView: View {
         let networkId = editingNetwork?.id ?? UUID()
         let configURL = EasyTierConfig.url(for: networkId)
         editConfig.peers = peerUri.isEmpty ? [] : [peerUri]
+        if let conflict = checkPortConflict(excluding: editingNetwork?.id) {
+            errorMessage = "端口 \(conflict) 已被其他网络占用"
+            showError = true
+            return
+        }
         do {
             try editConfig.save(to: configURL)
             let network = VirtualNetwork(
@@ -419,7 +476,8 @@ struct ConnectionsView: View {
         editingNetwork = nil
         selectedNetwork = nil
         editConfig = EasyTierConfig()
-        editAutoConnect = false
+        editConfig.listeners = defaultListeners()
+        editAutoConnect = true
         peerUri = ""
     }
 
@@ -453,6 +511,8 @@ struct ConnectionsView: View {
         .padding()
     }
 
+    @State private var copiedIPv4 = false
+
     @ViewBuilder
     private func detailRowWithCopy(label: String, value: String, copyValue: String) -> some View {
         HStack {
@@ -466,9 +526,14 @@ struct ConnectionsView: View {
             Button(action: {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(copyValue, forType: .string)
+                copiedIPv4 = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    copiedIPv4 = false
+                }
             }) {
-                Image(systemName: "doc.on.doc")
+                Image(systemName: copiedIPv4 ? "checkmark" : "doc.on.doc")
                     .font(.system(size: 11))
+                    .foregroundColor(copiedIPv4 ? .green : .primary)
                     .opacity(0.4)
             }
             .buttonStyle(.plain)
@@ -581,6 +646,35 @@ struct ConnectionsView: View {
         }
     }
 
+    @State private var deleteConfirmationTarget: VirtualNetwork?
+
+    private func confirmDelete() {
+        guard let id = selectedNetwork,
+              let network = networkStore.networks.first(where: { $0.id == id }) else { return }
+        confirmDeleteNetwork(network)
+    }
+
+    private func confirmDeleteNetwork(_ network: VirtualNetwork) {
+        deleteConfirmationTarget = network
+    }
+
+    private func deleteNetwork(_ network: VirtualNetwork) {
+        if network.status == .connected {
+            Task {
+                try? await easyTierService.stopNetwork(configPath: network.configPath)
+            }
+        }
+        let configURL = URL(fileURLWithPath: network.configPath)
+        try? FileManager.default.removeItem(at: configURL)
+        networkStore.removeNetwork(id: network.id)
+        if selectedNetwork == network.id {
+            selectedNetwork = nil
+        }
+        if isEditing {
+            cancelEditor()
+        }
+    }
+
     private func deleteNetworks(at offsets: IndexSet) {
         for index in offsets {
             let network = networkStore.networks[index]
@@ -589,8 +683,14 @@ struct ConnectionsView: View {
                     try? await easyTierService.stopNetwork(configPath: network.configPath)
                 }
             }
+            let configURL = URL(fileURLWithPath: network.configPath)
+            try? FileManager.default.removeItem(at: configURL)
         }
         networkStore.networks.remove(atOffsets: offsets)
+        networkStore.save()
+        if selectedNetwork != nil, !networkStore.networks.contains(where: { $0.id == selectedNetwork }) {
+            selectedNetwork = nil
+        }
         if isEditing {
             cancelEditor()
         }
@@ -634,6 +734,59 @@ struct ConnectionsView: View {
             let dst = dir.appendingPathComponent(src.lastPathComponent)
             try? FileManager.default.copyItem(at: src, to: dst)
         }
+    }
+
+    private func defaultListeners() -> [String] {
+        let usedPorts = allUsedPorts()
+        var port = 11010
+        while usedPorts.contains(port) {
+            port += 1
+        }
+        return ["tcp://0.0.0.0:\(port)", "udp://0.0.0.0:\(port)"]
+    }
+
+    private func allUsedPorts() -> Set<Int> {
+        var ports = Set<Int>()
+        for network in networkStore.networks {
+            guard let config = try? EasyTierConfig.parse(from: URL(fileURLWithPath: network.configPath)) else {
+                continue
+            }
+            for listener in config.listeners {
+                if let port = parsePort(from: listener) {
+                    ports.insert(port)
+                }
+            }
+        }
+        return ports
+    }
+
+    private func parsePort(from listener: String) -> Int? {
+        guard let colon = listener.lastIndex(of: ":"),
+              let port = Int(listener[listener.index(after: colon)...]) else {
+            return nil
+        }
+        return port
+    }
+
+    private func checkPortConflict(excluding networkId: UUID?) -> Int? {
+        var myPorts = Set<Int>()
+        for listener in editConfig.listeners {
+            if let port = parsePort(from: listener) {
+                myPorts.insert(port)
+            }
+        }
+        for network in networkStore.networks {
+            if network.id == networkId { continue }
+            guard let config = try? EasyTierConfig.parse(from: URL(fileURLWithPath: network.configPath)) else {
+                continue
+            }
+            for listener in config.listeners {
+                if let port = parsePort(from: listener), myPorts.contains(port) {
+                    return port
+                }
+            }
+        }
+        return nil
     }
 
     private func exportConfig(_ network: VirtualNetwork) {

@@ -40,7 +40,7 @@ class NetworkStore: ObservableObject {
         }
     }
 
-    private func save() {
+    func save() {
         guard let data = try? JSONEncoder().encode(networks) else { return }
         try? data.write(to: saveURL, options: .atomic)
     }
