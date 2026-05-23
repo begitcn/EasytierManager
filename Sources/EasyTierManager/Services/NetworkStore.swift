@@ -54,5 +54,8 @@ class NetworkStore: ObservableObject {
             return
         }
         networks = decoded
+        for i in networks.indices {
+            networks[i].status = .disconnected
+        }
     }
 }
