@@ -3,7 +3,6 @@ options:
   bundleIdPrefix: com.easytier
   deploymentTarget:
     macOS: "13.0"
-  xcodeVersion: "15.0"
 
 settings:
   base:
