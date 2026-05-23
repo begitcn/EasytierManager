@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        config:
+          - runner: macos-14
+            arch: aarch64
+          - runner: macos-13
+            arch: x86_64
+    runs-on: ${{ matrix.config.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Build Release DMG
+        run: |
+          export APP_VERSION="${GITHUB_REF_NAME#v}"
+          bash build-release.sh
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmg-${{ matrix.config.arch }}
+          path: dist/*.dmg
+
+  release:
+    needs: build
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dmg-*/*.dmg
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+      - name: Update Homebrew Tap
+        env:
+          GH_PAT: ${{ secrets.HOMEBREW_TAP_PAT }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          AARCH64_SHA=$(shasum -a 256 dmg-aarch64/*.dmg | awk '{print $1}')
+          X86_64_SHA=$(shasum -a 256 dmg-x86_64/*.dmg | awk '{print $1}')
+          bash scripts/update-homebrew-tap.sh \
+            --version "$VERSION" \
+            --aarch64-sha "$AARCH64_SHA" \
+            --x86_64-sha "$X86_64_SHA"
