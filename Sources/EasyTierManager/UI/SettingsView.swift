@@ -2,7 +2,6 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var easyTierService: EasyTierService
-    @State private var autoConnectOnLaunch = false
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var isCheckingUpdate = false
     @State private var dismissWarningTask: Task<Void, Never>?
@@ -233,7 +232,10 @@ struct SettingsView: View {
                         }
 
                         HStack {
-                            Toggle("", isOn: $autoConnectOnLaunch)
+                            Toggle("", isOn: Binding(
+                                get: { appSettings.autoConnectOnLaunch },
+                                set: { appSettings.setAutoConnectOnLaunch($0) }
+                            ))
                             Text("启动自动连接")
                             Spacer()
                         }

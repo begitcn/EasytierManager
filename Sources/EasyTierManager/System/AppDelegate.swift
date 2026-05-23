@@ -31,6 +31,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         Task {
             await EasyTierHelperManager.shared.installAndConnect()
+            await performAutoConnect()
+        }
+    }
+
+    @MainActor
+    private func performAutoConnect() async {
+        guard AppSettings.shared.autoConnectOnLaunch else { return }
+        for network in networkStore.networks where network.isAutoConnect {
+            networkStore.updateStatus(id: network.id, status: .connecting)
+            do {
+                try await easyTierService.startNetwork(configPath: network.configPath)
+                networkStore.updateStatus(id: network.id, status: .connected)
+            } catch {
+                networkStore.updateStatus(id: network.id, status: .error)
+            }
         }
     }
 

@@ -12,6 +12,7 @@ struct ConnectionsView: View {
     @State private var isCreating = false
     @State private var editingNetwork: VirtualNetwork?
     @State private var editConfig = EasyTierConfig()
+    @State private var editAutoConnect = false
     @State private var peerUri = ""
     @State private var detailConfig: EasyTierConfig?
 
@@ -154,6 +155,8 @@ struct ConnectionsView: View {
                         detailRow(label: "名称", value: network.name)
                             .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
                         coloredStatusRow(label: "状态", network: network)
+                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                        detailRow(label: "自动连接", value: network.isAutoConnect ? "是" : "否")
                     }
                 }
 
@@ -286,6 +289,8 @@ struct ConnectionsView: View {
                         formToggle(label: "延迟优先", value: $editConfig.latencyFirst)
                             .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
                         formToggle(label: "私有模式", value: $editConfig.privateMode)
+                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                        formToggle(label: "启动自动连接", value: $editAutoConnect)
                     }
                 }
 
@@ -393,7 +398,7 @@ struct ConnectionsView: View {
                 id: networkId,
                 name: editConfig.instanceName,
                 configPath: configURL.path,
-                isAutoConnect: false,
+                isAutoConnect: editAutoConnect,
                 status: editingNetwork?.status ?? .disconnected
             )
             if editingNetwork != nil {
@@ -414,6 +419,7 @@ struct ConnectionsView: View {
         editingNetwork = nil
         selectedNetwork = nil
         editConfig = EasyTierConfig()
+        editAutoConnect = false
         peerUri = ""
     }
 
@@ -421,6 +427,7 @@ struct ConnectionsView: View {
         guard let id = selectedNetwork, let network = networkStore.networks.first(where: { $0.id == id }) else { return }
         isCreating = false
         editingNetwork = network
+        editAutoConnect = network.isAutoConnect
         if let config = try? EasyTierConfig.parse(from: URL(fileURLWithPath: network.configPath)) {
             editConfig = config
         } else {

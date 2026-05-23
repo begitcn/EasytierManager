@@ -9,6 +9,7 @@ class AppSettings: ObservableObject {
     @Published var showMenuBarIcon: Bool
     @Published var showDockIcon: Bool
     @Published var isLaunchAtLogin: Bool
+    @Published var autoConnectOnLaunch: Bool
     @Published var toggleWarning: String?
 
     private let defaults = UserDefaults.standard
@@ -24,6 +25,7 @@ class AppSettings: ObservableObject {
             showDockIcon = dock
         }
         isLaunchAtLogin = defaults.object(forKey: "isLaunchAtLogin") as? Bool ?? false
+        autoConnectOnLaunch = defaults.object(forKey: "autoConnectOnLaunch") as? Bool ?? false
     }
 
     func setMenuBarIcon(_ value: Bool) {
@@ -46,6 +48,11 @@ class AppSettings: ObservableObject {
         applyActivationPolicy()
     }
 
+    func setAutoConnectOnLaunch(_ value: Bool) {
+        autoConnectOnLaunch = value
+        save()
+    }
+
     func setLaunchAtLogin(_ value: Bool) {
         isLaunchAtLogin = value
         save()
@@ -56,6 +63,7 @@ class AppSettings: ObservableObject {
         defaults.set(showMenuBarIcon, forKey: "showMenuBarIcon")
         defaults.set(showDockIcon, forKey: "showDockIcon")
         defaults.set(isLaunchAtLogin, forKey: "isLaunchAtLogin")
+        defaults.set(autoConnectOnLaunch, forKey: "autoConnectOnLaunch")
     }
 
     private func applyLaunchAtLogin() {
