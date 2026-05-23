@@ -138,6 +138,7 @@ echo "Building EasyTierManager..."
 
 rm -rf EasyTierManager.xcodeproj "$BUILD_DIR"
 xcodegen generate
+sed -i '' 's/objectVersion = [0-9][0-9]*/objectVersion = 57/' EasyTierManager.xcodeproj/project.pbxproj
 
 xcodebuild \
     -project EasyTierManager.xcodeproj \
