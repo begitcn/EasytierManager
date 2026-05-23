@@ -30,7 +30,9 @@ git clone --depth 1 https://github.com/begitcn/homebrew-tap.git "$TEMP_DIR"
 cd "$TEMP_DIR"
 git remote set-url origin "https://x-access-token:${GH_PAT}@github.com/begitcn/homebrew-tap.git"
 
-CASK_FILE="$TEMP_DIR/Casks/easytiermanager.rb"
+CASK_DIR="$TEMP_DIR/Casks"
+mkdir -p "$CASK_DIR"
+CASK_FILE="$CASK_DIR/easytiermanager.rb"
 
 cat > "$CASK_FILE" << CASK_EOF
 cask "easytiermanager" do
