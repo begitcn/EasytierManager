@@ -19,8 +19,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_15.4.app
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install XcodeGen 2.40.0
+        run: |
+          curl -L -o /tmp/xcodegen.zip "https://github.com/XcodeGen/XcodeGen/releases/download/2.40.0/xcodegen.zip"
+          sudo unzip -o /tmp/xcodegen.zip -d /usr/local/bin/
+          rm /tmp/xcodegen.zip
+          xcodegen --version
       - name: Build Release DMG
         run: |
           export APP_VERSION="${GITHUB_REF_NAME#v}"
