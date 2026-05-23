@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.easytier
   deploymentTarget:
     macOS: "13.0"
+  objectVersion: "57"
 
 settings:
   base:
