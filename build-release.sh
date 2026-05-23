@@ -178,12 +178,12 @@ echo "   Helpers embedded in app bundle"
 HELPER_BIN="$BUILD_DIR/Release/EasyTierHelper"
 HELPER_TOOLS_DIR="$APP_BUNDLE/Contents/Library/HelperTools"
 HELPER_DAEMONS_DIR="$APP_BUNDLE/Contents/Library/LaunchDaemons"
-PLIST_SRC="$SCRIPT_DIR/Resources/com.easytier.manager.helper.plist"
+PLIST_SRC="$SCRIPT_DIR/Resources/EasyTierHelper.plist"
 
 if [ -f "$HELPER_BIN" ]; then
     mkdir -p "$HELPER_TOOLS_DIR"
-    cp "$HELPER_BIN" "$HELPER_TOOLS_DIR/com.easytier.manager.helper"
-    chmod +x "$HELPER_TOOLS_DIR/com.easytier.manager.helper"
+    cp "$HELPER_BIN" "$HELPER_TOOLS_DIR/EasyTierHelper"
+    chmod +x "$HELPER_TOOLS_DIR/EasyTierHelper"
 
     mkdir -p "$HELPER_DAEMONS_DIR"
     cp "$PLIST_SRC" "$HELPER_DAEMONS_DIR/"
