@@ -10,11 +10,21 @@ let package = Package(
     ],
     dependencies: [],
     targets: [
+        .target(
+            name: "EasyTierHelperShared",
+            dependencies: [],
+            path: "Sources/EasyTierHelperShared"
+        ),
         .executableTarget(
             name: "EasyTierManager",
-            dependencies: [],
+            dependencies: ["EasyTierHelperShared"],
             path: "Sources/EasyTierManager",
-            exclude: ["Resources"]
+            exclude: []
+        ),
+        .executableTarget(
+            name: "EasyTierHelper",
+            dependencies: ["EasyTierHelperShared"],
+            path: "Sources/EasyTierHelper"
         )
     ]
 )

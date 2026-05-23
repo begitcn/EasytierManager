@@ -1,24 +1,15 @@
 import SwiftUI
 
 struct NodesView: View {
+    @EnvironmentObject var networkStore: NetworkStore
+    @EnvironmentObject var easyTierService: EasyTierService
     @State private var selectedNetworkId: UUID?
-    @State private var networks: [VirtualNetwork] = [
-        VirtualNetwork(name: "Home Network", configPath: "~/.easytier/home.toml", status: .connected),
-        VirtualNetwork(name: "Office Network", configPath: "~/.easytier/office.toml"),
-    ]
-
-    @State private var nodes: [NetworkNode] = [
-        NetworkNode(name: "MacBook-Pro", ipv4: "10.144.0.1", ipv6: "fd00::1", status: .online, latency: 5, networkId: UUID()),
-        NetworkNode(name: "Raspberry-Pi", ipv4: "10.144.0.2", status: .online, latency: 12, networkId: UUID()),
-        NetworkNode(name: "NAS-Server", ipv4: "10.144.0.3", ipv6: "fd00::3", status: .online, latency: 3, networkId: UUID()),
-        NetworkNode(name: "VPS-Tokyo", ipv4: "10.144.0.4", status: .online, latency: 45, networkId: UUID()),
-        NetworkNode(name: "Remote-Desktop", ipv4: "10.144.0.5", status: .offline, networkId: UUID()),
-    ]
-
+    @State private var nodes: [NetworkNode] = []
     @State private var searchText = ""
     @State private var sortOrder: SortOrder = .name
     @State private var copiedAlert = false
     @State private var copiedValue = ""
+    @State private var isLoadingNodes = false
 
     enum SortOrder: String, CaseIterable {
         case name = "名称"
@@ -26,8 +17,15 @@ struct NodesView: View {
         case latency = "延迟"
     }
 
+    var connectedNetworks: [VirtualNetwork] {
+        networkStore.networks.filter { $0.status == .connected }
+    }
+
     var filteredNodes: [NetworkNode] {
         var result = nodes
+        if let networkId = selectedNetworkId {
+            result = result.filter { $0.networkId == networkId }
+        }
         if !searchText.isEmpty {
             result = result.filter { node in
                 node.name.localizedCaseInsensitiveContains(searchText) ||
@@ -50,7 +48,7 @@ struct NodesView: View {
             HStack(spacing: 8) {
                 Picker("网络", selection: $selectedNetworkId) {
                     Text("所有网络").tag(nil as UUID?)
-                    ForEach(networks) { network in
+                    ForEach(connectedNetworks) { network in
                         Text(network.name).tag(network.id as UUID?)
                     }
                 }
@@ -84,18 +82,37 @@ struct NodesView: View {
                         .stroke(NSColor.border2.color, lineWidth: 1)
                 )
                 .frame(maxWidth: 200)
+
+                Button(action: refreshNodes) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.plain)
+                .disabled(isLoadingNodes)
             }
             .padding(8)
             .border(width: 1, edges: [.bottom], color: NSColor.border.color)
 
-            if filteredNodes.isEmpty {
+            if isLoadingNodes && nodes.isEmpty {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("加载节点...")
+                        .font(.headline)
+                        .opacity(0.5)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if filteredNodes.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "square.3.layers.3d")
                         .font(.system(size: 48))
                         .opacity(0.3)
-                    Text("未找到节点")
+                    Text(connectedNetworks.isEmpty ? "无已连接网络" : "未找到节点")
                         .font(.headline)
                         .opacity(0.5)
+                    if connectedNetworks.isEmpty {
+                        Text("请先连接一个虚拟网络")
+                            .font(.caption)
+                            .opacity(0.3)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -151,12 +168,10 @@ struct NodesView: View {
                                     Button(action: { copyToClipboard(node.ipv4) }) {
                                         Label("复制 IPv4", systemImage: "doc.on.doc")
                                     }
-                                    Divider()
-                                    Button(action: {}) {
-                                        Label("Ping", systemImage: "antenna.radiowaves.left.and.right")
-                                    }
-                                    Button(action: {}) {
-                                        Label("路由追踪", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+                                    if let ipv6 = node.ipv6 {
+                                        Button(action: { copyToClipboard(ipv6) }) {
+                                            Label("复制 IPv6", systemImage: "doc.on.doc")
+                                        }
                                     }
                                 } label: {
                                     Image(systemName: "ellipsis.circle")
@@ -200,6 +215,36 @@ struct NodesView: View {
             }
             .animation(.easeInOut(duration: 0.2), value: copiedAlert)
         )
+        .onAppear {
+            refreshNodes()
+        }
+    }
+
+    private func refreshNodes() {
+        guard !connectedNetworks.isEmpty else {
+            nodes = []
+            return
+        }
+
+        isLoadingNodes = true
+        Task {
+            do {
+                let peerNodes = try await easyTierService.getPeerList()
+                let mappedNodes = peerNodes.map { node in
+                    var n = node
+                    if let networkId = selectedNetworkId {
+                        n.networkId = networkId
+                    } else if let firstNetwork = connectedNetworks.first {
+                        n.networkId = firstNetwork.id
+                    }
+                    return n
+                }
+                nodes = mappedNodes
+            } catch {
+                nodes = []
+            }
+            isLoadingNodes = false
+        }
     }
 
     private func copyToClipboard(_ value: String) {

@@ -4,16 +4,24 @@ import SwiftUI
 @MainActor
 class MainWindowController: NSWindowController {
     let navigationVM: NavigationVM
+    let networkStore: NetworkStore
+    let easyTierService: EasyTierService
 
     init(
-        navigationVM: NavigationVM
+        navigationVM: NavigationVM,
+        networkStore: NetworkStore,
+        easyTierService: EasyTierService
     ) {
         self.navigationVM = navigationVM
+        self.networkStore = networkStore
+        self.easyTierService = easyTierService
 
         let window = NSWindow(
             contentViewController: NSHostingController(
                 rootView: MainView()
                     .environmentObject(navigationVM)
+                    .environmentObject(networkStore)
+                    .environmentObject(easyTierService)
             )
         )
 

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @EnvironmentObject var easyTierService: EasyTierService
     @State private var isLaunchAtLogin = false
     @State private var showMenuBarIcon = true
     @State private var showDockIcon = true
@@ -15,6 +16,10 @@ struct SettingsView: View {
     @State private var latestVersion = ""
     @State private var isDownloading = false
     @State private var downloadError: String?
+
+    @State private var isHelperConnected = false
+    @State private var isInstallingHelper = false
+    @State private var helperError: String?
 
     private var helpersPath: String {
         Bundle.main.bundlePath + "/Contents/Helpers"
@@ -31,6 +36,67 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                SettingsSection(title: "特权助手") {
+                    VStack(spacing: 0) {
+                        HStack {
+                            Text("助手状态")
+                                .opacity(0.6)
+                                .frame(width: 140, alignment: .leading)
+
+                            if EasyTierHelperManager.shared.isHelperConnected {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("已连接")
+                            } else {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.red)
+                                Text("未连接")
+                            }
+
+                            Spacer()
+
+                            if isInstallingHelper {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                    .frame(width: 16, height: 16)
+                            } else {
+                                Button("安装助手") {
+                                    installHelper()
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundColor(.accentColor)
+                                .disabled(isInstallingHelper)
+                            }
+                        }
+                        .padding()
+                        .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+
+                        if let error = helperError {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                                Spacer()
+                            }
+                            .padding()
+                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                        }
+
+                        HStack {
+                            Text("说明")
+                                .opacity(0.6)
+                                .frame(width: 140, alignment: .leading)
+                            Text("特权助手需要 root 权限来运行 easytier-core，点击\"安装助手\"并输入密码")
+                                .font(.caption)
+                                .opacity(0.6)
+                            Spacer()
+                        }
+                        .padding()
+                    }
+                }
+
                 SettingsSection(title: "EasyTier") {
                     VStack(spacing: 0) {
                         HStack {
@@ -221,6 +287,21 @@ struct SettingsView: View {
         .toggleStyle(.switch)
         .background(NSColor.background1.color)
         .onAppear(perform: detectEasytierVersion)
+    }
+
+    private func installHelper() {
+        isInstallingHelper = true
+        helperError = nil
+
+        Task {
+            do {
+                try await EasyTierHelperManager.shared.reinstallHelper()
+                isHelperConnected = EasyTierHelperManager.shared.isHelperConnected
+            } catch {
+                helperError = error.localizedDescription
+            }
+            isInstallingHelper = false
+        }
     }
 
     private func detectEasytierVersion() {

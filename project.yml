@@ -19,6 +19,8 @@ targets:
     sources:
       - path: Sources/EasyTierManager
       - path: Resources/Assets.xcassets
+    dependencies:
+      - target: EasyTierHelperShared
     settings:
       base:
         INFOPLIST_FILE: Resources/Info.plist
@@ -45,4 +47,53 @@ targets:
             chmod +x "$DST/easytier-core" "$DST/easytier-cli"
           fi
         basedOnDependencyAnalysis: false
+      - name: "Build & Embed Privileged Helper"
+        script: |
+          HELPER_BIN=""
+          if [ -f "${BUILT_PRODUCTS_DIR}/EasyTierHelper" ]; then
+            HELPER_BIN="${BUILT_PRODUCTS_DIR}/EasyTierHelper"
+          elif [ -f "${SRCROOT}/.build/debug/EasyTierHelper" ]; then
+            HELPER_BIN="${SRCROOT}/.build/debug/EasyTierHelper"
+          elif [ -f "${SRCROOT}/.build/release/EasyTierHelper" ]; then
+            HELPER_BIN="${SRCROOT}/.build/release/EasyTierHelper"
+          fi
 
+          HELPER_PLIST_SRC="${SRCROOT}/Resources/com.easytier.manager.helper.plist"
+          HELPER_TOOLS_DIR="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/HelperTools"
+          HELPER_DAEMONS_DIR="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons"
+
+          if [ -f "$HELPER_BIN" ]; then
+            mkdir -p "$HELPER_TOOLS_DIR"
+            cp "$HELPER_BIN" "$HELPER_TOOLS_DIR/com.easytier.manager.helper"
+            chmod +x "$HELPER_TOOLS_DIR/com.easytier.manager.helper"
+
+            mkdir -p "$HELPER_DAEMONS_DIR"
+            cp "$HELPER_PLIST_SRC" "$HELPER_DAEMONS_DIR/"
+            echo "Helper embedded from $HELPER_BIN"
+          else
+            echo "warning: EasyTierHelper binary not found. Run 'swift build' first."
+          fi
+        basedOnDependencyAnalysis: false
+
+  EasyTierHelperShared:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: Sources/EasyTierHelperShared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.easytier.manager.helpershared
+        CODE_SIGN_IDENTITY: "-"
+
+  EasyTierHelper:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Sources/EasyTierHelper
+    dependencies:
+      - target: EasyTierHelperShared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.easytier.manager.helper
+        CODE_SIGN_IDENTITY: "-"
+        SKIP_INSTALL: "YES"

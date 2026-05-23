@@ -148,6 +148,15 @@ xcodebuild \
     MARKETING_VERSION="$APP_VERSION" \
     CURRENT_PROJECT_VERSION="1"
 
+xcodebuild \
+    -project EasyTierManager.xcodeproj \
+    -scheme EasyTierHelper \
+    -configuration Release \
+    build \
+    SYMROOT="$BUILD_DIR" \
+    MARKETING_VERSION="$APP_VERSION" \
+    CURRENT_PROJECT_VERSION="1"
+
 echo "   Build complete"
 
 # ============================================================
@@ -165,6 +174,21 @@ mkdir -p "$APP_HELPERS"
 cp "$HELPERS_DIR/easytier-core" "$HELPERS_DIR/easytier-cli" "$APP_HELPERS/"
 chmod +x "$APP_HELPERS/easytier-core" "$APP_HELPERS/easytier-cli"
 echo "   Helpers embedded in app bundle"
+
+HELPER_BIN="$BUILD_DIR/Release/EasyTierHelper"
+HELPER_TOOLS_DIR="$APP_BUNDLE/Contents/Library/HelperTools"
+HELPER_DAEMONS_DIR="$APP_BUNDLE/Contents/Library/LaunchDaemons"
+PLIST_SRC="$SCRIPT_DIR/Resources/com.easytier.manager.helper.plist"
+
+if [ -f "$HELPER_BIN" ]; then
+    mkdir -p "$HELPER_TOOLS_DIR"
+    cp "$HELPER_BIN" "$HELPER_TOOLS_DIR/com.easytier.manager.helper"
+    chmod +x "$HELPER_TOOLS_DIR/com.easytier.manager.helper"
+
+    mkdir -p "$HELPER_DAEMONS_DIR"
+    cp "$PLIST_SRC" "$HELPER_DAEMONS_DIR/"
+    echo "   Privileged helper embedded in app bundle"
+fi
 
 # ============================================================
 # Step 4: Create DMG

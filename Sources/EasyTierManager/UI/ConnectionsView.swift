@@ -2,19 +2,23 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ConnectionsView: View {
-    @State private var networks: [VirtualNetwork] = []
+    @EnvironmentObject var networkStore: NetworkStore
+    @EnvironmentObject var easyTierService: EasyTierService
     @State private var selectedNetwork: VirtualNetwork.ID?
     @State private var showAddSheet = false
     @State private var editingNetwork: VirtualNetwork?
+    @State private var connectingNetworkId: UUID?
+    @State private var errorMessage: String?
+    @State private var showError = false
 
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
                 List(selection: $selectedNetwork) {
-                    ForEach(networks) { network in
+                    ForEach(networkStore.networks) { network in
                         HStack {
-                            Image(systemName: network.status == .connected ? "circle.fill" : "circle")
-                                .foregroundColor(network.status == .connected ? .green : network.status == .connecting ? .orange : .secondary)
+                            Image(systemName: statusIcon(network.status))
+                                .foregroundColor(statusColor(network.status))
                                 .font(.system(size: 10))
 
                             VStack(alignment: .leading, spacing: 2) {
@@ -28,9 +32,15 @@ struct ConnectionsView: View {
 
                             Spacer()
 
-                            Text(networkStatusText(network.status))
-                                .font(.caption)
-                                .opacity(0.5)
+                            if connectingNetworkId == network.id {
+                                ProgressView()
+                                    .scaleEffect(0.6)
+                                    .frame(width: 16, height: 16)
+                            } else {
+                                Text(networkStatusText(network.status))
+                                    .font(.caption)
+                                    .opacity(0.5)
+                            }
                         }
                         .padding(.vertical, 4)
                         .tag(network.id)
@@ -50,8 +60,8 @@ struct ConnectionsView: View {
 
                     Button(action: {
                         guard let id = selectedNetwork,
-                              let index = networks.firstIndex(where: { $0.id == id }) else { return }
-                        editingNetwork = networks[index]
+                              let index = networkStore.networks.firstIndex(where: { $0.id == id }) else { return }
+                        editingNetwork = networkStore.networks[index]
                     }) {
                         Image(systemName: "pencil")
                     }
@@ -66,14 +76,14 @@ struct ConnectionsView: View {
                     }
                     .buttonStyle(.plain)
                     .padding(6)
-                    .disabled(selectedNetwork == nil)
+                    .disabled(selectedNetwork == nil || connectingNetworkId != nil)
                 }
                 .padding(.horizontal, 8)
                 .frame(height: 36)
             }
             .frame(minWidth: 250, maxWidth: 350)
 
-            if let id = selectedNetwork, let network = networks.first(where: { $0.id == id }) {
+            if let id = selectedNetwork, let network = networkStore.networks.first(where: { $0.id == id }) {
                 networkDetailView(network)
             } else {
                 emptySelectionView
@@ -82,15 +92,36 @@ struct ConnectionsView: View {
         .background(NSColor.background1.color)
         .sheet(isPresented: $showAddSheet) {
             NetworkEditView { newNetwork in
-                networks.append(newNetwork)
+                networkStore.addNetwork(newNetwork)
             }
         }
         .sheet(item: $editingNetwork) { network in
             NetworkEditView(network: network) { updated in
-                if let index = networks.firstIndex(where: { $0.id == updated.id }) {
-                    networks[index] = updated
-                }
+                networkStore.updateNetwork(updated)
             }
+        }
+        .alert("错误", isPresented: $showError) {
+            Button("确定", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "未知错误")
+        }
+    }
+
+    private func statusIcon(_ status: VirtualNetwork.ConnectionStatus) -> String {
+        switch status {
+        case .connected: return "circle.fill"
+        case .connecting: return "circle.lefthalf.filled"
+        case .disconnected: return "circle"
+        case .error: return "xmark.circle"
+        }
+    }
+
+    private func statusColor(_ status: VirtualNetwork.ConnectionStatus) -> Color {
+        switch status {
+        case .connected: return .green
+        case .connecting: return .orange
+        case .disconnected: return .secondary
+        case .error: return .red
         }
     }
 
@@ -105,7 +136,7 @@ struct ConnectionsView: View {
 
     private var isSelectedConnected: Bool {
         guard let id = selectedNetwork,
-              let network = networks.first(where: { $0.id == id }) else { return false }
+              let network = networkStore.networks.first(where: { $0.id == id }) else { return false }
         return network.status == .connected
     }
 
@@ -171,12 +202,49 @@ struct ConnectionsView: View {
 
     private func toggleConnection() {
         guard let id = selectedNetwork,
-              let index = networks.firstIndex(where: { $0.id == id }) else { return }
-        networks[index].status = networks[index].status == .connected ? .disconnected : .connected
+              let network = networkStore.networks.first(where: { $0.id == id }) else { return }
+
+        connectingNetworkId = id
+
+        if network.status == .connected {
+            Task {
+                networkStore.updateStatus(id: id, status: .connecting)
+                do {
+                    try await easyTierService.stopNetwork(configPath: network.configPath)
+                    networkStore.updateStatus(id: id, status: .disconnected)
+                } catch {
+                    networkStore.updateStatus(id: id, status: .error)
+                    errorMessage = error.localizedDescription
+                    showError = true
+                }
+                connectingNetworkId = nil
+            }
+        } else {
+            Task {
+                networkStore.updateStatus(id: id, status: .connecting)
+                do {
+                    try await easyTierService.startNetwork(configPath: network.configPath)
+                    networkStore.updateStatus(id: id, status: .connected)
+                } catch {
+                    networkStore.updateStatus(id: id, status: .error)
+                    errorMessage = error.localizedDescription
+                    showError = true
+                }
+                connectingNetworkId = nil
+            }
+        }
     }
 
     private func deleteNetworks(at offsets: IndexSet) {
-        networks.remove(atOffsets: offsets)
+        for index in offsets {
+            let network = networkStore.networks[index]
+            if network.status == .connected {
+                Task {
+                    try? await easyTierService.stopNetwork(configPath: network.configPath)
+                }
+            }
+        }
+        networkStore.networks.remove(atOffsets: offsets)
     }
 }
 
