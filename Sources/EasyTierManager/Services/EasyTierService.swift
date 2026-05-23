@@ -97,9 +97,10 @@ class EasyTierService: ObservableObject {
         }
     }
 
-    func getPeerList() async throws -> [NetworkNode] {
+    func getPeerList(connectedNetworks: [VirtualNetwork] = []) async throws -> [NetworkNode] {
         let output = try await runCLI([cliPath, "-o", "json", "peer", "list"])
-        return parsePeerJSON(output)
+        let networkMap = Dictionary(connectedNetworks.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
+        return parsePeerJSON(output, networkMap: networkMap)
     }
 
     func getNodeInfo() async throws -> [String: Any] {
@@ -218,13 +219,15 @@ class EasyTierService: ObservableObject {
         }
     }
 
-    private func parsePeerJSON(_ json: String) -> [NetworkNode] {
+    private func parsePeerJSON(_ json: String, networkMap: [String: UUID] = [:]) -> [NetworkNode] {
         guard let data = json.data(using: .utf8),
               let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         else { return parsePeerText(json) }
 
         return jsonArray.flatMap { instance -> [NetworkNode] in
             guard let result = instance["result"] as? [[String: Any]] else { return [] }
+            let instanceName = instance["instance_name"] as? String ?? ""
+            let networkId = networkMap[instanceName] ?? UUID()
             return result.compactMap { dict -> NetworkNode? in
                 guard let name = dict["hostname"] as? String ?? dict["peer_id"] as? String,
                       let ipv4 = dict["ipv4"] as? String
@@ -238,14 +241,17 @@ class EasyTierService: ObservableObject {
                     return nil
                 }()
 
+                let cost = dict["cost"] as? String
+
                 return NetworkNode(
                     name: name,
                     ipv4: ipv4,
                     ipv6: dict["virtual_ipv6"] as? String ?? dict["ipv6"] as? String,
                     status: .online,
                     latency: latency,
-                    networkId: UUID(),
-                    isLocal: (dict["cost"] as? String) == "Local"
+                    networkId: networkId,
+                    isLocal: cost == "Local",
+                    cost: cost
                 )
             }
         }

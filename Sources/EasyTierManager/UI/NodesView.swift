@@ -120,11 +120,13 @@ struct NodesView: View {
                     LazyVStack(spacing: 1) {
                         HStack {
                             Text("名称")
-                                .frame(width: 200, alignment: .leading)
+                                .frame(width: 180, alignment: .leading)
                             Text("IPv4")
-                                .frame(width: 200, alignment: .leading)
+                                .frame(width: 170, alignment: .leading)
                             Text("延迟")
-                                .frame(width: 100, alignment: .trailing)
+                                .frame(width: 80, alignment: .trailing)
+                            Text("组网方式")
+                                .frame(width: 80, alignment: .center)
                             Spacer()
                             Text("操作")
                                 .frame(width: 80, alignment: .center)
@@ -181,17 +183,7 @@ struct NodesView: View {
         isLoadingNodes = true
         Task {
             do {
-                let peerNodes = try await easyTierService.getPeerList()
-                let mappedNodes = peerNodes.map { node in
-                    var n = node
-                    if let networkId = selectedNetworkId {
-                        n.networkId = networkId
-                    } else if let firstNetwork = connectedNetworks.first {
-                        n.networkId = firstNetwork.id
-                    }
-                    return n
-                }
-                nodes = mappedNodes
+                nodes = try await easyTierService.getPeerList(connectedNetworks: connectedNetworks)
             } catch {
                 nodes = []
             }
@@ -218,10 +210,27 @@ private struct NodeRowView: View {
     let node: NetworkNode
     let onCopy: (String) -> Void
 
+    private func costBadge(_ cost: String?) -> some View {
+        let (text, color): (String, Color) = {
+            switch cost {
+            case "Local": return ("本地", Color.gray)
+            case "p2p": return ("P2P", Color.green)
+            default: return ("中继", Color.orange)
+            }
+        }()
+        return Text(text)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundColor(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
     var body: some View {
         HStack {
             Text(node.name)
-                .frame(width: 200, alignment: .leading)
+                .frame(width: 180, alignment: .leading)
                 .lineLimit(1)
 
             HStack(spacing: 4) {
@@ -237,11 +246,14 @@ private struct NodeRowView: View {
                 .opacity(0.4)
                 .help("复制 IPv4")
             }
-            .frame(width: 200, alignment: .leading)
+            .frame(width: 170, alignment: .leading)
 
             Text(node.latency != nil ? "\(node.latency!)ms" : "-")
-                .frame(width: 100, alignment: .trailing)
+                .frame(width: 80, alignment: .trailing)
                 .opacity(node.latency != nil ? 1 : 0.3)
+
+            costBadge(node.cost)
+                .frame(width: 80, alignment: .center)
 
             Spacer()
 
