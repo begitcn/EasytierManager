@@ -1,10 +1,14 @@
 import Cocoa
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationSupportsSecureRestorableState(_: NSApplication) -> Bool {
+        true
+    }
     var navigationVM: NavigationVM!
     var networkStore: NetworkStore!
     var easyTierService: EasyTierService!
     var mainWindowController: MainWindowController!
+    var statusBarController: StatusBarController?
 
     @MainActor
     func applicationDidFinishLaunching(_: Notification) {
@@ -18,7 +22,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             easyTierService: easyTierService
         )
 
+        _ = AppSettings.shared
+        statusBarController = StatusBarController(mainWindowController: mainWindowController)
+
         openMainWindow()
+
+        AppSettings.shared.applyActivationPolicy()
 
         Task {
             await EasyTierHelperManager.shared.installAndConnect()
@@ -32,7 +41,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     func openMainWindow() {
-        NSApp.setActivationPolicy(.regular)
         mainWindowController.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
     }

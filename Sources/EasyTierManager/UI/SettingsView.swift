@@ -3,10 +3,10 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var easyTierService: EasyTierService
     @State private var isLaunchAtLogin = false
-    @State private var showMenuBarIcon = true
-    @State private var showDockIcon = true
     @State private var autoConnectOnLaunch = false
+    @ObservedObject private var appSettings = AppSettings.shared
     @State private var isCheckingUpdate = false
+    @State private var dismissWarningTask: Task<Void, Never>?
 
     @State private var easytierVersion: String = ""
     @State private var appVersion: String = Bundle.main.shortVersion
@@ -193,7 +193,10 @@ struct SettingsView: View {
                         .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
 
                         HStack {
-                            Toggle("", isOn: $showMenuBarIcon)
+                            Toggle("", isOn: Binding(
+                                get: { appSettings.showMenuBarIcon },
+                                set: { appSettings.setMenuBarIcon($0) }
+                            ))
                             Text("显示系统托盘")
                             Spacer()
                         }
@@ -201,12 +204,31 @@ struct SettingsView: View {
                         .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
 
                         HStack {
-                            Toggle("", isOn: $showDockIcon)
+                            Toggle("", isOn: Binding(
+                                get: { appSettings.showDockIcon },
+                                set: { appSettings.setDockIcon($0) }
+                            ))
                             Text("显示程序坞图标")
                             Spacer()
                         }
                         .padding()
                         .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+
+                        if let warning = appSettings.toggleWarning {
+                            HStack(spacing: 6) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.red)
+                                    .font(.caption)
+                                Text(warning)
+                                    .foregroundColor(.red)
+                                    .font(.caption)
+                                Spacer()
+                            }
+                            .padding(.horizontal)
+                            .padding(.vertical, 8)
+                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                            .transition(.opacity)
+                        }
 
                         HStack {
                             Toggle("", isOn: $autoConnectOnLaunch)
@@ -287,6 +309,17 @@ struct SettingsView: View {
         .toggleStyle(.switch)
         .background(NSColor.background1.color)
         .onAppear(perform: detectEasytierVersion)
+        .onChange(of: appSettings.toggleWarning) { newValue in
+            if newValue != nil {
+                dismissWarningTask?.cancel()
+                dismissWarningTask = Task {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    if !Task.isCancelled {
+                        appSettings.toggleWarning = nil
+                    }
+                }
+            }
+        }
     }
 
     private func installHelper() {

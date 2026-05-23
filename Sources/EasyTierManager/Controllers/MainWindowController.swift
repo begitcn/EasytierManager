@@ -52,6 +52,5 @@ class MainWindowController: NSWindowController {
 
 extension MainWindowController: NSWindowDelegate {
     func windowWillClose(_: Notification) {
-        NSApp.setActivationPolicy(.accessory)
     }
 }
