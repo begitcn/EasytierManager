@@ -94,6 +94,12 @@ open EasyTierManager.xcodeproj
 
 EasyTier 二进制下载后缓存在 `~/Library/Caches/com.easytier.manager/easytier-binaries/`，避免重复下载。
 
+## 架构
+
+- **前端**：SwiftUI + AppKit，手动管理 AppDelegate 与 NSMenu
+- **特权助手**：`EasyTierHelper` — 通过 launchd 以 root 权限运行的 XPC 服务，负责启动/停止 easytier-core 进程
+- **核心组件**：easytier-core（组网守护进程）与 easytier-cli（命令行工具）嵌入在 app bundle 中
+
 ## 数据目录
 
 配置与运行数据存放路径：
@@ -102,6 +108,9 @@ EasyTier 二进制下载后缓存在 `~/Library/Caches/com.easytier.manager/easy
 | --- | --- |
 | `~/Library/Application Support/com.easytier.manager/` | 网络配置与应用状态 |
 | `EasyTierManager.app/Contents/Helpers/` | EasyTier 核心二进制（easytier-core / easytier-cli） |
+| `EasyTierManager.app/Contents/Library/HelperTools/EasyTierHelper` | 特权助手二进制 |
+| `EasyTierManager.app/Contents/Library/LaunchDaemons/EasyTierHelper.plist` | launchd 配置文件 |
+| `/Library/PrivilegedHelperTools/EasyTierHelper` | 安装后的特权助手（符号链接） |
 
 ## 常见问题
 
