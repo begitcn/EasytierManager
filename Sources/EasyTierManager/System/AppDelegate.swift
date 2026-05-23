@@ -49,6 +49,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationWillTerminate(_: Notification) {
+        easyTierService.forceStopAll()
+    }
+
     @MainActor
     func applicationDidBecomeActive(_: Notification) {
         mainWindowController.showWindow(nil)

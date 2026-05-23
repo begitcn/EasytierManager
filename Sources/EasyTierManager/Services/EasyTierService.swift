@@ -132,6 +132,21 @@ class EasyTierService: ObservableObject {
         }
     }
 
+    func forceStopAll() {
+        guard let pid = coreProcessPID else { return }
+        coreProcessPID = nil
+        activeConfigs = []
+
+        let semaphore = DispatchSemaphore(value: 0)
+        if let anyProxy = helperManager.proxy,
+           let proxy = anyProxy as? EasyTierHelperProtocol {
+            proxy.forceStopProcess(pid: pid) { _, _ in
+                semaphore.signal()
+            }
+            _ = semaphore.wait(timeout: .now() + 3.0)
+        }
+    }
+
     // MARK: - Private
 
     private func launchCore(proxy: EasyTierHelperProtocol) async throws -> Int {

@@ -7,7 +7,7 @@ struct SettingsView: View {
     @State private var dismissWarningTask: Task<Void, Never>?
 
     @State private var easytierVersion: String = ""
-    @State private var appVersion: String = Bundle.main.shortVersion
+    @State private var appVersion: String = Bundle.main.versionStr
     @State private var appBuild: String = Bundle.main.buildStr
 
     @State private var updateAvailable = false
@@ -249,7 +249,7 @@ struct SettingsView: View {
                             Text("应用版本")
                                 .opacity(0.6)
                                 .frame(width: 140, alignment: .leading)
-                            Text("\(appVersion) (\(appBuild))")
+                            Text(appVersion)
                                 .font(.system(.body, design: .monospaced))
                             Spacer()
                         }
