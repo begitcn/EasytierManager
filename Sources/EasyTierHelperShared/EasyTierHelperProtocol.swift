@@ -6,7 +6,7 @@ public enum EasyTierHelperConstants {
     public static let helperBundleProgram = "Contents/Library/HelperTools/EasyTierHelper"
     public static let allowedClientBundleIdentifier = "com.easytier.manager"
     public static let allowedClientRequirement = "identifier \"\(allowedClientBundleIdentifier)\""
-    public static let helperVersion = "1.0.0"
+    public static let helperVersion = "1.0.2"
 }
 
 @objc(EasyTierHelperProtocol)

@@ -2,7 +2,7 @@ import Foundation
 
 extension Bundle {
     var shortVersion: String {
-        infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+        infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.2"
     }
 
     var buildVersion: Int {
