@@ -478,7 +478,7 @@ struct ConnectionsView: View {
         editConfig = EasyTierConfig()
         editConfig.listeners = defaultListeners()
         editAutoConnect = true
-        peerUri = ""
+        peerUri = "tcp://225284.xyz:11010"
     }
 
     private func startEditing() {

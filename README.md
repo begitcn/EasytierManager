@@ -24,6 +24,14 @@ macOS 原生 GUI 管理器（SwiftUI + AppKit），用于管理 [EasyTier](https
 
 > 本项目是一个纯 AI Vibe Coding 产物，全部代码由 AI 生成，未经人工审查。项目在需求梳理、架构设计、功能实现、文档维护等环节全程与 AI 协作。
 
+## 截图
+
+<div align="center">
+  <img src="images/connect.png" width="280" alt="连接管理" />
+  <img src="images/peer.png" width="280" alt="节点监控" />
+  <img src="images/setting.png" width="280" alt="系统设置" />
+</div>
+
 ## 功能
 
 | 功能 | 说明 |
@@ -45,18 +53,18 @@ macOS 原生 GUI 管理器（SwiftUI + AppKit），用于管理 [EasyTier](https
 
 ## 安装
 
-### DMG
-
-从 [GitHub Releases](https://github.com/begitcn/EasyTierManager/releases) 下载对应架构的 `.dmg` 文件，挂载后将 `EasyTierManager.app` 拖入 `/Applications`。
-
-> CI 仅自动发布 Apple Silicon (arm64) 版本。Intel 用户请使用 Homebrew 安装或参考「本地构建」自行打包。
-
-### Homebrew
+### Homebrew（推荐）
 
 ```bash
 brew tap begitcn/homebrew-tap
 brew install --cask easytiermanager
 ```
+
+### DMG
+
+从 [GitHub Releases](https://github.com/begitcn/EasyTierManager/releases) 下载 `.dmg` 文件，挂载后将 `EasyTierManager.app` 拖入 `/Applications`。
+
+> CI 仅自动发布 Apple Silicon (arm64) 版本。Intel 用户请使用 Homebrew 安装。
 
 ### 本地构建
 
