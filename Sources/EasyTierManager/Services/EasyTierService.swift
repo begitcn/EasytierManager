@@ -86,10 +86,10 @@ class EasyTierService: ObservableObject {
 
         let proxy = try await getProxy()
         return try await withCheckedThrowingContinuation { continuation in
-            proxy.isProcessRunning(pid: pid) { isRunning in
+            proxy.isProcessRunning(pid: pid) { [weak self] isRunning in
                 if !isRunning {
                     Task { @MainActor in
-                        self.coreProcessPID = nil
+                        self?.coreProcessPID = nil
                     }
                 }
                 continuation.resume(returning: isRunning)

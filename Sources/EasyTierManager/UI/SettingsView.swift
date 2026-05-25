@@ -5,6 +5,8 @@ struct SettingsView: View {
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var isCheckingUpdate = false
     @State private var dismissWarningTask: Task<Void, Never>?
+    @State private var checkUpdateTask: URLSessionDataTask?
+    @State private var checkAppUpdateTask: URLSessionDataTask?
 
     @State private var easytierVersion: String = ""
     @State private var appVersion: String = Bundle.main.versionStr
@@ -14,6 +16,12 @@ struct SettingsView: View {
     @State private var latestVersion = ""
     @State private var isDownloading = false
     @State private var downloadError: String?
+
+    @State private var isCheckingAppUpdate = false
+    @State private var appUpdateAvailable = false
+    @State private var appLatestVersion = ""
+    @State private var isAppDownloading = false
+    @State private var appDownloadError: String?
 
     @ObservedObject private var helperManager = EasyTierHelperManager.shared
     @State private var isInstallingHelper = false
@@ -252,9 +260,76 @@ struct SettingsView: View {
                             Text(appVersion)
                                 .font(.system(.body, design: .monospaced))
                             Spacer()
+                            Button(action: checkAppUpdates) {
+                                if isCheckingAppUpdate {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                        .frame(width: 16, height: 16)
+                                } else {
+                                    Text("检查更新")
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundColor(.accentColor)
+                            .disabled(isCheckingAppUpdate || isAppDownloading)
                         }
                         .padding()
                         .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+
+                        if isAppDownloading {
+                            HStack {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                    .frame(width: 16, height: 16)
+                                Text("正在下载更新...")
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                            }
+                            .padding()
+                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                        }
+
+                        if let error = appDownloadError {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.red)
+                                Text(error)
+                                    .foregroundColor(.red)
+                                    .font(.caption)
+                                Spacer()
+                            }
+                            .padding()
+                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                        }
+
+                        if appUpdateAvailable && !isAppDownloading {
+                            HStack {
+                                Image(systemName: "arrow.down.circle.fill")
+                                    .foregroundColor(.blue)
+                                Text("版本 \(appLatestVersion) 可用")
+                                    .foregroundColor(.blue)
+                                Spacer()
+                                Button("下载并更新") {
+                                    downloadAppUpdate()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                            }
+                            .padding()
+                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                        }
+
+                        if !isCheckingAppUpdate && !appUpdateAvailable && !isAppDownloading && appDownloadError == nil {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("已是最新版本")
+                                    .foregroundColor(.green)
+                                Spacer()
+                            }
+                            .padding()
+                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                        }
 
                         HStack {
                             Text("GitHub")
@@ -313,6 +388,11 @@ struct SettingsView: View {
         .toggleStyle(.switch)
         .background(NSColor.background1.color)
         .onAppear(perform: detectEasytierVersion)
+        .onDisappear {
+            checkUpdateTask?.cancel()
+            checkAppUpdateTask?.cancel()
+            dismissWarningTask?.cancel()
+        }
         .onChange(of: appSettings.toggleWarning) { newValue in
             if newValue != nil {
                 dismissWarningTask?.cancel()
@@ -384,7 +464,8 @@ struct SettingsView: View {
             return
         }
 
-        URLSession.shared.dataTask(with: url) { data, _, error in
+        checkUpdateTask?.cancel()
+        checkUpdateTask = URLSession.shared.dataTask(with: url) { data, _, error in
             DispatchQueue.main.async {
                 isCheckingUpdate = false
 
@@ -401,7 +482,8 @@ struct SettingsView: View {
 
                 updateAvailable = current.compare(latest, options: .numeric) == .orderedAscending
             }
-        }.resume()
+        }
+        checkUpdateTask?.resume()
     }
 
     private func downloadUpdate() {
@@ -463,6 +545,115 @@ struct SettingsView: View {
                 await MainActor.run {
                     downloadError = error.localizedDescription
                     isDownloading = false
+                }
+            }
+        }
+    }
+
+    private func checkAppUpdates() {
+        isCheckingAppUpdate = true
+        appUpdateAvailable = false
+        appDownloadError = nil
+        let urlString = "https://api.github.com/repos/begitcn/EasyTierManager/releases/latest"
+
+        guard let url = URL(string: urlString) else {
+            isCheckingAppUpdate = false
+            return
+        }
+
+        checkAppUpdateTask?.cancel()
+        checkAppUpdateTask = URLSession.shared.dataTask(with: url) { data, _, error in
+            DispatchQueue.main.async {
+                isCheckingAppUpdate = false
+
+                guard let data = data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let tagName = json["tag_name"] as? String else {
+                    return
+                }
+
+                appLatestVersion = tagName
+                let current = appVersion.replacingOccurrences(of: "v", with: "")
+                let latest = tagName.replacingOccurrences(of: "v", with: "")
+
+                appUpdateAvailable = current.compare(latest, options: .numeric) == .orderedAscending
+            }
+        }
+        checkAppUpdateTask?.resume()
+    }
+
+    private func downloadAppUpdate() {
+        isAppDownloading = true
+        appDownloadError = nil
+
+        let version = appLatestVersion.replacingOccurrences(of: "v", with: "")
+        let zipName = "EasyTierManager_v\(version).zip"
+        guard let url = URL(string: "https://github.com/begitcn/EasyTierManager/releases/download/\(appLatestVersion)/\(zipName)") else {
+            appDownloadError = "无效的下载地址"
+            isAppDownloading = false
+            return
+        }
+
+        Task {
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+
+                let tempDir = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("easytiermanager-update-\(UUID().uuidString)")
+                defer { try? FileManager.default.removeItem(at: tempDir) }
+
+                try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+                let zipPath = tempDir.appendingPathComponent(zipName)
+                try data.write(to: zipPath)
+
+                let unzip = Process()
+                unzip.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+                unzip.arguments = ["-o", zipPath.path, "-d", tempDir.path]
+                try unzip.run()
+                unzip.waitUntilExit()
+
+                guard unzip.terminationStatus == 0 else {
+                    throw NSError(domain: "update", code: -1, userInfo: [NSLocalizedDescriptionKey: "解压失败"])
+                }
+
+                let appBundleName = "EasyTierManager.app"
+                let newAppPath = tempDir.appendingPathComponent(appBundleName).path
+                guard FileManager.default.fileExists(atPath: newAppPath) else {
+                    throw NSError(domain: "update", code: -2, userInfo: [NSLocalizedDescriptionKey: "未找到应用包"])
+                }
+
+                let currentAppPath = Bundle.main.bundlePath
+
+                let script = """
+                #!/bin/bash
+                sleep 1
+                rm -rf "\(currentAppPath)"
+                cp -R "\(newAppPath)" "\(currentAppPath)"
+                chmod +x "\(currentAppPath)/Contents/MacOS/EasyTierManager"
+                open "\(currentAppPath)"
+                """
+
+                let scriptPath = tempDir.appendingPathComponent("updater.sh")
+                try script.write(to: scriptPath, atomically: true, encoding: .utf8)
+                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath.path)
+
+                let updater = Process()
+                updater.executableURL = URL(fileURLWithPath: "/bin/bash")
+                updater.arguments = [scriptPath.path]
+                try updater.run()
+
+                await MainActor.run {
+                    isAppDownloading = false
+                }
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    NSApplication.shared.terminate(nil)
+                }
+            } catch {
+                await MainActor.run {
+                    appDownloadError = error.localizedDescription
+                    isAppDownloading = false
                 }
             }
         }

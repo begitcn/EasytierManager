@@ -11,6 +11,8 @@ private final class EasyTierHelperService: NSObject, EasyTierHelperProtocol {
         completion(EasyTierHelperConstants.helperVersion)
     }
 
+    private var runningProcesses: [Int: Process] = [:]
+
     func startProcess(executablePath: String, arguments: [String], completion: @escaping (Bool, Int, String?) -> Void) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
@@ -21,12 +23,17 @@ private final class EasyTierHelperService: NSObject, EasyTierHelperProtocol {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
+        process.terminationHandler = { [weak self] p in
+            self?.runningProcesses.removeValue(forKey: Int(p.processIdentifier))
+        }
+
         do {
             try process.run()
 
             let pid = process.processIdentifier
 
             if process.isRunning {
+                runningProcesses[Int(pid)] = process
                 completion(true, Int(pid), nil)
             } else {
                 let exitCode = process.terminationStatus
