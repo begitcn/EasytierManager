@@ -8,7 +8,8 @@ cd "$SCRIPT_DIR"
 # Configuration
 # ============================================================
 EASYTIER_VERSION="2.6.4"
-APP_VERSION="${APP_VERSION:-1.0.5}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_VERSION="${APP_VERSION:-$(cat "$SCRIPT_DIR/VERSION")}"
 CACHE_DIR="$HOME/Library/Caches/com.easytier.manager/easytier-binaries"
 HELPERS_DIR="$SCRIPT_DIR/Helpers"
 DIST_DIR="$SCRIPT_DIR/dist"
@@ -136,7 +137,11 @@ fi
 echo ""
 echo "Building EasyTierManager..."
 
+# Generate Version.generated.swift from VERSION
+bash scripts/generate-version.sh
+
 rm -rf EasyTierManager.xcodeproj "$BUILD_DIR"
+export MARKETING_VERSION="$APP_VERSION"
 xcodegen generate
 sed -i '' 's/objectVersion = [0-9][0-9]*/objectVersion = 57/' EasyTierManager.xcodeproj/project.pbxproj
 

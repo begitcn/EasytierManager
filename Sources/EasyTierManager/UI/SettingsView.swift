@@ -3,6 +3,9 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var easyTierService: EasyTierService
     @ObservedObject private var appSettings = AppSettings.shared
+
+    private static let updateCheckInterval: TimeInterval = 600
+
     @State private var isCheckingUpdate = false
     @State private var dismissWarningTask: Task<Void, Never>?
     @State private var checkUpdateTask: URLSessionDataTask?
@@ -16,6 +19,7 @@ struct SettingsView: View {
     @State private var latestVersion = ""
     @State private var isDownloading = false
     @State private var downloadError: String?
+    @State private var lastCoreCheckTime: Date?
 
     @State private var isCheckingAppUpdate = false
     @State private var hasCheckedAppUpdate = false
@@ -24,6 +28,7 @@ struct SettingsView: View {
     @State private var appCheckError: String?
     @State private var isAppDownloading = false
     @State private var appDownloadError: String?
+    @State private var lastAppCheckTime: Date?
 
     @ObservedObject private var helperManager = EasyTierHelperManager.shared
     @State private var isInstallingHelper = false
@@ -471,6 +476,10 @@ struct SettingsView: View {
     }
 
     private func checkForUpdates() {
+        if let lastCheck = lastCoreCheckTime, Date().timeIntervalSince(lastCheck) < Self.updateCheckInterval {
+            return
+        }
+
         isCheckingUpdate = true
         let urlString = "https://api.github.com/repos/EasyTier/EasyTier/releases/latest"
 
@@ -479,10 +488,21 @@ struct SettingsView: View {
             return
         }
 
+        var request = URLRequest(url: url)
+        request.setValue("EasyTierManager/\(Bundle.main.versionStr)", forHTTPHeaderField: "User-Agent")
+
         checkUpdateTask?.cancel()
-        checkUpdateTask = URLSession.shared.dataTask(with: url) { data, _, error in
+        checkUpdateTask = URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
                 isCheckingUpdate = false
+
+                if error != nil {
+                    return
+                }
+
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    return
+                }
 
                 guard let data = data,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -496,6 +516,7 @@ struct SettingsView: View {
                 let latest = tagName.replacingOccurrences(of: "v", with: "")
 
                 updateAvailable = current.compare(latest, options: .numeric) == .orderedAscending
+                lastCoreCheckTime = Date()
             }
         }
         checkUpdateTask?.resume()
@@ -566,6 +587,11 @@ struct SettingsView: View {
     }
 
     private func checkAppUpdates() {
+        if let lastCheck = lastAppCheckTime, Date().timeIntervalSince(lastCheck) < Self.updateCheckInterval {
+            hasCheckedAppUpdate = true
+            return
+        }
+
         isCheckingAppUpdate = true
         hasCheckedAppUpdate = false
         appUpdateAvailable = false
@@ -581,8 +607,11 @@ struct SettingsView: View {
             return
         }
 
+        var request = URLRequest(url: url)
+        request.setValue("EasyTierManager/\(Bundle.main.versionStr)", forHTTPHeaderField: "User-Agent")
+
         checkAppUpdateTask?.cancel()
-        checkAppUpdateTask = URLSession.shared.dataTask(with: url) { data, response, error in
+        checkAppUpdateTask = URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
                 if let error = error {
                     appCheckError = "网络错误: \(error.localizedDescription)"
@@ -591,8 +620,23 @@ struct SettingsView: View {
                     return
                 }
 
-                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                guard let httpResponse = response as? HTTPURLResponse else {
                     appCheckError = "服务器响应异常"
+                    isCheckingAppUpdate = false
+                    hasCheckedAppUpdate = true
+                    return
+                }
+
+                guard httpResponse.statusCode == 200 else {
+                    let msg: String
+                    if httpResponse.statusCode == 403 {
+                        msg = "GitHub API 速率限制，请稍后再试"
+                    } else if httpResponse.statusCode == 404 {
+                        msg = "未找到版本信息"
+                    } else {
+                        msg = "服务器响应异常 (HTTP \(httpResponse.statusCode))"
+                    }
+                    appCheckError = msg
                     isCheckingAppUpdate = false
                     hasCheckedAppUpdate = true
                     return
@@ -614,6 +658,7 @@ struct SettingsView: View {
                 appUpdateAvailable = current.compare(latest, options: .numeric) == .orderedAscending
                 isCheckingAppUpdate = false
                 hasCheckedAppUpdate = true
+                lastAppCheckTime = Date()
             }
         }
         checkAppUpdateTask?.resume()
