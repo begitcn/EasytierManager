@@ -19,8 +19,6 @@ targets:
     sources:
       - path: Sources/EasyTierManager
       - path: Resources/Assets.xcassets
-    resources:
-      - path: VERSION
     dependencies:
       - target: EasyTierHelperShared
     settings:
@@ -38,6 +36,11 @@ targets:
         CFBundleIconName: AppIcon
     entitlements:
       path: Resources/Signing.entitlements
+    preBuildScripts:
+      - name: "Generate Version.swift"
+        script: |
+          bash "${SRCROOT}/scripts/generate-version.sh"
+        basedOnDependencyAnalysis: false
     postCompileScripts:
       - name: "Embed EasyTier Helpers"
         script: |
@@ -99,3 +102,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.easytier.manager.helper
         CODE_SIGN_IDENTITY: "-"
         SKIP_INSTALL: "YES"
+    preBuildScripts:
+      - name: "Generate Version.swift"
+        script: |
+          bash "${SRCROOT}/scripts/generate-version.sh"
+        basedOnDependencyAnalysis: false

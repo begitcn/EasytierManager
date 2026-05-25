@@ -18,8 +18,7 @@ let package = Package(
         .executableTarget(
             name: "EasyTierManager",
             dependencies: ["EasyTierHelperShared"],
-            path: "Sources/EasyTierManager",
-            resources: [.copy("../../VERSION")]
+            path: "Sources/EasyTierManager"
         ),
         .executableTarget(
             name: "EasyTierHelper",

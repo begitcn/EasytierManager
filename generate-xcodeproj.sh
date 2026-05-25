@@ -7,6 +7,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Generate version constants from VERSION
+bash scripts/generate-version.sh
+
 if ! command -v xcodegen &> /dev/null; then
     echo "XcodeGen not found. Install it with: brew install xcodegen"
     echo "Then run this script again."

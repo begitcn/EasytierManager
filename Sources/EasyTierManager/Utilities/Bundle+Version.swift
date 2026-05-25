@@ -1,4 +1,5 @@
 import Foundation
+import EasyTierHelperShared
 
 extension Bundle {
     var shortVersion: String {
@@ -6,12 +7,7 @@ extension Bundle {
            !v.isEmpty, v != "$(MARKETING_VERSION)" {
             return v
         }
-        if let url = Bundle.main.url(forResource: "VERSION", withExtension: nil),
-           let v = try? String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
-           !v.isEmpty {
-            return v
-        }
-        return "1.0.0"
+        return AppVersion.current
     }
 
     var buildVersion: Int {

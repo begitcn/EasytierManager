@@ -137,6 +137,9 @@ fi
 echo ""
 echo "Building EasyTierManager..."
 
+# Generate version constants from VERSION
+bash scripts/generate-version.sh
+
 rm -rf EasyTierManager.xcodeproj "$BUILD_DIR"
 export MARKETING_VERSION="$APP_VERSION"
 xcodegen generate
