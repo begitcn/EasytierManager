@@ -18,8 +18,10 @@ struct SettingsView: View {
     @State private var downloadError: String?
 
     @State private var isCheckingAppUpdate = false
+    @State private var hasCheckedAppUpdate = false
     @State private var appUpdateAvailable = false
     @State private var appLatestVersion = ""
+    @State private var appCheckError: String?
     @State private var isAppDownloading = false
     @State private var appDownloadError: String?
 
@@ -289,6 +291,19 @@ struct SettingsView: View {
                             .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
                         }
 
+                        if let error = appCheckError {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                Text(error)
+                                    .foregroundColor(.orange)
+                                    .font(.caption)
+                                Spacer()
+                            }
+                            .padding()
+                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                        }
+
                         if let error = appDownloadError {
                             HStack {
                                 Image(systemName: "exclamationmark.triangle.fill")
@@ -319,7 +334,7 @@ struct SettingsView: View {
                             .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
                         }
 
-                        if !isCheckingAppUpdate && !appUpdateAvailable && !isAppDownloading && appDownloadError == nil {
+                        if hasCheckedAppUpdate && !isCheckingAppUpdate && !appUpdateAvailable && !isAppDownloading && appCheckError == nil && appDownloadError == nil {
                             HStack {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.green)
@@ -552,23 +567,43 @@ struct SettingsView: View {
 
     private func checkAppUpdates() {
         isCheckingAppUpdate = true
+        hasCheckedAppUpdate = false
         appUpdateAvailable = false
+        appCheckError = nil
         appDownloadError = nil
+
         let urlString = "https://api.github.com/repos/begitcn/EasyTierManager/releases/latest"
 
         guard let url = URL(string: urlString) else {
+            appCheckError = "无效的地址"
             isCheckingAppUpdate = false
+            hasCheckedAppUpdate = true
             return
         }
 
         checkAppUpdateTask?.cancel()
-        checkAppUpdateTask = URLSession.shared.dataTask(with: url) { data, _, error in
+        checkAppUpdateTask = URLSession.shared.dataTask(with: url) { data, response, error in
             DispatchQueue.main.async {
-                isCheckingAppUpdate = false
+                if let error = error {
+                    appCheckError = "网络错误: \(error.localizedDescription)"
+                    isCheckingAppUpdate = false
+                    hasCheckedAppUpdate = true
+                    return
+                }
+
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    appCheckError = "服务器响应异常"
+                    isCheckingAppUpdate = false
+                    hasCheckedAppUpdate = true
+                    return
+                }
 
                 guard let data = data,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let tagName = json["tag_name"] as? String else {
+                    appCheckError = "解析响应失败"
+                    isCheckingAppUpdate = false
+                    hasCheckedAppUpdate = true
                     return
                 }
 
@@ -577,6 +612,8 @@ struct SettingsView: View {
                 let latest = tagName.replacingOccurrences(of: "v", with: "")
 
                 appUpdateAvailable = current.compare(latest, options: .numeric) == .orderedAscending
+                isCheckingAppUpdate = false
+                hasCheckedAppUpdate = true
             }
         }
         checkAppUpdateTask?.resume()
