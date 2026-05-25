@@ -14,10 +14,16 @@ jobs:
         run: sudo xcode-select -s /Applications/Xcode_15.4.app
       - name: Install XcodeGen
         run: brew install xcodegen
-      - name: Build Release DMG
+      - name: Verify version consistency
         run: |
-          export APP_VERSION="${GITHUB_REF_NAME#v}"
-          bash build-release.sh
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          FILE_VERSION=$(tr -d '[:space:]' < VERSION)
+          if [ "$TAG_VERSION" != "$FILE_VERSION" ]; then
+            echo "ERROR: Tag version ($TAG_VERSION) != VERSION file ($FILE_VERSION)"
+            exit 1
+          fi
+      - name: Build Release DMG
+        run: bash build-release.sh
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
@@ -42,7 +48,7 @@ jobs:
         env:
           GH_PAT: ${{ secrets.HOMEBREW_TAP_PAT }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION=$(tr -d '[:space:]' < VERSION)
           SHA=$(shasum -a 256 dmg/*.dmg | awk '{print $1}')
           bash scripts/update-homebrew-tap.sh \
             --version "$VERSION" \
