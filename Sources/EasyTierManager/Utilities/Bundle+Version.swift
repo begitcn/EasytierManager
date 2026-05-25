@@ -11,7 +11,7 @@ extension Bundle {
            !v.isEmpty {
             return v
         }
-        return "1.0.5"
+        return "1.0.0"
     }
 
     var buildVersion: Int {
