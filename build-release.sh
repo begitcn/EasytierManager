@@ -8,7 +8,7 @@ cd "$SCRIPT_DIR"
 # Configuration
 # ============================================================
 EASYTIER_VERSION="2.6.4"
-APP_VERSION="${APP_VERSION:-1.0.4}"
+APP_VERSION="${APP_VERSION:-1.0.5}"
 CACHE_DIR="$HOME/Library/Caches/com.easytier.manager/easytier-binaries"
 HELPERS_DIR="$SCRIPT_DIR/Helpers"
 DIST_DIR="$SCRIPT_DIR/dist"
