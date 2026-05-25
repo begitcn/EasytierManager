@@ -13,9 +13,6 @@ if ! command -v xcodegen &> /dev/null; then
     exit 1
 fi
 
-# Generate Version.generated.swift from VERSION
-bash scripts/generate-version.sh
-
 # Pass MARKETING_VERSION to xcodegen so project.yml can use it
 export MARKETING_VERSION
 MARKETING_VERSION=$(cat VERSION)
