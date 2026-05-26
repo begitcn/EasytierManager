@@ -18,4 +18,5 @@ public protocol EasyTierHelperProtocol {
     func isProcessRunning(pid: Int, completion: @escaping (Bool) -> Void)
     func findProcess(pattern: String, completion: @escaping ([String]) -> Void)
     func forceStopProcess(pid: Int, completion: @escaping (Bool, String?) -> Void)
+    func stopAllProcesses(completion: @escaping (Bool, String?) -> Void)
 }

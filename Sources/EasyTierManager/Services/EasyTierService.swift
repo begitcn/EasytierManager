@@ -1,5 +1,5 @@
 import Foundation
-import EasyTierHelperShared
+@preconcurrency import EasyTierHelperShared
 
 @MainActor
 class EasyTierService: ObservableObject {
@@ -14,6 +14,9 @@ class EasyTierService: ObservableObject {
     private var helpersPath: String { Bundle.main.bundlePath + "/Contents/Helpers" }
     private var corePath: String { helpersPath + "/easytier-core" }
     private var cliPath: String { helpersPath + "/easytier-cli" }
+
+    private var healthCheckTask: Task<Void, Never>?
+    private let healthCheckInterval: TimeInterval = 30
 
     private init() {}
 
@@ -42,6 +45,7 @@ class EasyTierService: ObservableObject {
         do {
             let newPid = try await launchCore(proxy: proxy)
             coreProcessPID = newPid
+            startHealthCheck()
         } catch {
             activeConfigs.removeLast()
             throw error
@@ -62,6 +66,7 @@ class EasyTierService: ObservableObject {
         }
 
         if activeConfigs.isEmpty {
+            stopHealthCheck()
             try await stopProcessSafely(pid: pid, proxy: proxy)
             coreProcessPID = nil
         } else {
@@ -98,9 +103,23 @@ class EasyTierService: ObservableObject {
     }
 
     func getPeerList(connectedNetworks: [VirtualNetwork] = []) async throws -> [NetworkNode] {
+        guard await isCoreAlive() else {
+            throw EasyTierError.coreNotRunning
+        }
         let output = try await runCLI([cliPath, "-o", "json", "peer", "list"])
         let networkMap = Dictionary(connectedNetworks.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
         return parsePeerJSON(output, networkMap: networkMap)
+    }
+
+    func isCoreAlive() async -> Bool {
+        guard let pid = coreProcessPID else { return false }
+        guard let anyProxy = helperManager.proxy,
+              let proxy = anyProxy as? EasyTierHelperProtocol else { return false }
+        return await withCheckedContinuation { continuation in
+            proxy.isProcessRunning(pid: pid) { running in
+                continuation.resume(returning: running)
+            }
+        }
     }
 
     func getNodeInfo() async throws -> [String: Any] {
@@ -133,24 +152,75 @@ class EasyTierService: ObservableObject {
     }
 
     func forceStopAll() {
-        guard let pid = coreProcessPID else { return }
+        stopHealthCheck()
+        let pid = coreProcessPID
         coreProcessPID = nil
         activeConfigs = []
 
+        guard let anyProxy = helperManager.proxy,
+              let proxy = anyProxy as? EasyTierHelperProtocol else { return }
+
         let semaphore = DispatchSemaphore(value: 0)
-        if let anyProxy = helperManager.proxy,
-           let proxy = anyProxy as? EasyTierHelperProtocol {
-            proxy.forceStopProcess(pid: pid) { _, _ in
+
+        if let pid {
+            proxy.stopProcess(pid: pid) { _, _ in
+                DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
+                    proxy.forceStopProcess(pid: pid) { _, _ in
+                        proxy.stopAllProcesses { _, _ in
+                            semaphore.signal()
+                        }
+                    }
+                }
+            }
+        } else {
+            proxy.stopAllProcesses { _, _ in
                 semaphore.signal()
             }
-            _ = semaphore.wait(timeout: .now() + 3.0)
+        }
+
+        _ = semaphore.wait(timeout: .now() + 5.0)
+    }
+
+    private func startHealthCheck() {
+        stopHealthCheck()
+        let intervalNs = UInt64(healthCheckInterval * 1_000_000_000)
+        healthCheckTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: intervalNs)
+                guard let self else { break }
+                await self.performHealthCheck()
+            }
+        }
+    }
+
+    private func stopHealthCheck() {
+        healthCheckTask?.cancel()
+        healthCheckTask = nil
+    }
+
+    private func performHealthCheck() async {
+        guard !activeConfigs.isEmpty, let _ = coreProcessPID else { return }
+        let alive = await isCoreAlive()
+        guard !alive else { return }
+
+        coreProcessPID = nil
+        do {
+            let proxy = try await getProxy()
+            let newPid = try await launchCore(proxy: proxy)
+            coreProcessPID = newPid
+        } catch {
+            for configPath in activeConfigs {
+                if let network = NetworkStore.shared.networks.first(where: { $0.configPath == configPath }) {
+                    NetworkStore.shared.updateStatus(id: network.id, status: .error)
+                }
+            }
         }
     }
 
     // MARK: - Private
 
     private func launchCore(proxy: EasyTierHelperProtocol) async throws -> Int {
-        var args = ["--daemon"]
+        var args = [String]()
         for config in activeConfigs {
             args += ["-c", config]
         }
@@ -215,22 +285,43 @@ class EasyTierService: ObservableObject {
         process.standardError = errorPipe
 
         return try await withCheckedThrowingContinuation { continuation in
-            do {
-                try process.run()
-                process.waitUntilExit()
+            let guardFlag = CLIResumeGuard()
+
+            let timeoutTask = DispatchWorkItem {
+                if process.isRunning {
+                    process.terminate()
+                }
+                guardFlag.safeResume(continuation) {
+                    throw EasyTierError.cliTimeout
+                }
+            }
+
+            process.terminationHandler = { p in
+                timeoutTask.cancel()
+
                 let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
                 let output = String(data: outputData, encoding: .utf8) ?? ""
 
-                if process.terminationStatus == 0 {
-                    continuation.resume(returning: output)
-                } else {
-                    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                    let errorStr = String(data: errorData, encoding: .utf8) ?? "Unknown error"
-                    continuation.resume(throwing: EasyTierError.cliFailed(errorStr))
+                guardFlag.safeResume(continuation) {
+                    if p.terminationStatus == 0 {
+                        return output
+                    } else {
+                        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                        let errorStr = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+                        throw EasyTierError.cliFailed(errorStr)
+                    }
                 }
-            } catch {
-                continuation.resume(throwing: error)
             }
+
+            do {
+                try process.run()
+            } catch {
+                timeoutTask.cancel()
+                guardFlag.safeResume(continuation) { throw error }
+                return
+            }
+
+            DispatchQueue.global().asyncAfter(deadline: .now() + 15.0, execute: timeoutTask)
         }
     }
 
@@ -300,11 +391,31 @@ class EasyTierService: ObservableObject {
     }
 }
 
+private final class CLIResumeGuard: @unchecked Sendable {
+    private let lock = NSObject()
+    private var resumed = false
+
+    func safeResume(_ continuation: CheckedContinuation<String, any Error>,
+                    block: () throws -> String) {
+        objc_sync_enter(lock)
+        if resumed { objc_sync_exit(lock); return }
+        resumed = true
+        objc_sync_exit(lock)
+        do {
+            continuation.resume(returning: try block())
+        } catch {
+            continuation.resume(throwing: error)
+        }
+    }
+}
+
 enum EasyTierError: LocalizedError {
     case helperNotConnected
     case startFailed(String)
     case stopFailed(String)
     case cliFailed(String)
+    case cliTimeout
+    case coreNotRunning
     case invalidArguments
 
     var errorDescription: String? {
@@ -317,6 +428,10 @@ enum EasyTierError: LocalizedError {
             return "停止网络失败: \(msg)"
         case .cliFailed(let msg):
             return "CLI 执行失败: \(msg)"
+        case .cliTimeout:
+            return "CLI 执行超时，核心进程可能已停止响应"
+        case .coreNotRunning:
+            return "核心进程已停止运行"
         case .invalidArguments:
             return "无效参数"
         }

@@ -29,10 +29,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         AppSettings.shared.applyActivationPolicy()
 
+        setupTerminationHandlers()
+
         Task {
             await EasyTierHelperManager.shared.installAndConnect()
             await performAutoConnect()
         }
+    }
+
+    private func setupTerminationHandlers() {
+        let signalQueue = DispatchQueue.global(qos: .userInitiated)
+
+        let termSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: signalQueue)
+        termSource.setEventHandler {
+            Self.handleTerminationSignal()
+        }
+        termSource.activate()
+        signal(SIGTERM, SIG_IGN)
+
+        let intSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: signalQueue)
+        intSource.setEventHandler {
+            Self.handleTerminationSignal()
+        }
+        intSource.activate()
+        signal(SIGINT, SIG_IGN)
+    }
+
+    private static func handleTerminationSignal() {
+        let semaphore = DispatchSemaphore(value: 0)
+        DispatchQueue.main.async {
+            EasyTierService.shared.forceStopAll()
+            EasyTierHelperManager.shared.disconnect()
+            semaphore.signal()
+        }
+        _ = semaphore.wait(timeout: .now() + 8.0)
+        exit(0)
     }
 
     @MainActor
@@ -51,6 +82,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_: Notification) {
         easyTierService.forceStopAll()
+        EasyTierHelperManager.shared.disconnect()
     }
 
     @MainActor

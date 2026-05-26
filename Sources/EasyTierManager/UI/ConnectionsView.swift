@@ -49,6 +49,16 @@ struct ConnectionsView: View {
             }
         }
         .background(NSColor.background1.color)
+        .onAppear {
+            if selectedNetwork == nil, let first = networkStore.networks.first {
+                selectedNetwork = first.id
+            }
+        }
+        .onChange(of: networkStore.networks.count) { _ in
+            if selectedNetwork == nil, let first = networkStore.networks.first {
+                selectedNetwork = first.id
+            }
+        }
         .onChange(of: selectedNetwork) { _ in reloadDetailConfig() }
         .confirmationDialog("确认删除", isPresented: .init(
             get: { deleteConfirmationTarget != nil },

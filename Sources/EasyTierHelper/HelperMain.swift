@@ -12,19 +12,22 @@ private final class EasyTierHelperService: NSObject, EasyTierHelperProtocol {
     }
 
     private var runningProcesses: [Int: Process] = [:]
+    private let processLock = NSLock()
 
     func startProcess(executablePath: String, arguments: [String], completion: @escaping (Bool, Int, String?) -> Void) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = arguments
 
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
+        let devNull = FileHandle(fileDescriptor: open("/dev/null", O_WRONLY), closeOnDealloc: true)
+        process.standardOutput = devNull
+        process.standardError = devNull
 
         process.terminationHandler = { [weak self] p in
-            self?.runningProcesses.removeValue(forKey: Int(p.processIdentifier))
+            guard let self else { return }
+            self.processLock.lock()
+            self.runningProcesses.removeValue(forKey: Int(p.processIdentifier))
+            self.processLock.unlock()
         }
 
         do {
@@ -33,14 +36,12 @@ private final class EasyTierHelperService: NSObject, EasyTierHelperProtocol {
             let pid = process.processIdentifier
 
             if process.isRunning {
+                processLock.lock()
                 runningProcesses[Int(pid)] = process
+                processLock.unlock()
                 completion(true, Int(pid), nil)
             } else {
-                let exitCode = process.terminationStatus
-                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                let errorStr = String(data: errorData, encoding: .utf8)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                completion(false, Int(exitCode), errorStr)
+                completion(false, Int(process.terminationStatus), nil)
             }
         } catch {
             completion(false, -1, error.localizedDescription)
@@ -69,6 +70,34 @@ private final class EasyTierHelperService: NSObject, EasyTierHelperProtocol {
         } else {
             let errorStr = String(cString: strerror(errno))
             completion(false, errorStr)
+        }
+    }
+
+    func stopAllProcesses(completion: @escaping (Bool, String?) -> Void) {
+        processLock.lock()
+        let pids = Array(runningProcesses.keys)
+        processLock.unlock()
+
+        guard !pids.isEmpty else {
+            completion(true, nil)
+            return
+        }
+
+        for pid in pids {
+            kill(pid_t(pid), SIGTERM)
+        }
+
+        DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            guard let self else { return }
+            self.processLock.lock()
+            for pid in pids {
+                if kill(pid_t(pid), 0) == 0 {
+                    kill(pid_t(pid), SIGKILL)
+                }
+                self.runningProcesses.removeValue(forKey: pid)
+            }
+            self.processLock.unlock()
+            completion(true, nil)
         }
     }
 
@@ -102,10 +131,28 @@ private final class EasyTierHelperService: NSObject, EasyTierHelperProtocol {
 
 private final class EasyTierHelperListenerDelegate: NSObject, NSXPCListenerDelegate {
     private let service = EasyTierHelperService()
+    private var activeConnections = NSMutableSet()
+    private let connectionLock = NSLock()
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
         newConnection.exportedInterface = NSXPCInterface(with: EasyTierHelperProtocol.self)
         newConnection.exportedObject = self.service
+
+        connectionLock.lock()
+        activeConnections.add(newConnection)
+        connectionLock.unlock()
+
+        newConnection.invalidationHandler = { [weak self] in
+            guard let self else { return }
+            self.connectionLock.lock()
+            self.activeConnections.remove(newConnection)
+            let remaining = self.activeConnections.count
+            self.connectionLock.unlock()
+            if remaining == 0 {
+                self.service.stopAllProcesses { _, _ in }
+            }
+        }
+
         newConnection.resume()
         return true
     }

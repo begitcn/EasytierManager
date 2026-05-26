@@ -6,10 +6,11 @@ struct NodesView: View {
     @State private var selectedNetworkId: UUID?
     @State private var nodes: [NetworkNode] = []
     @State private var searchText = ""
-    @State private var sortOrder: SortOrder = .name
+    @State private var sortOrder: SortOrder = .ipv4
     @State private var copiedAlert = false
     @State private var copiedValue = ""
     @State private var isLoadingNodes = false
+    @State private var nodesErrorMessage: String?
 
     enum SortOrder: String, CaseIterable {
         case name = "名称"
@@ -36,7 +37,7 @@ struct NodesView: View {
         case .name:
             result.sort { $0.name < $1.name }
         case .ipv4:
-            result.sort { $0.ipv4 < $1.ipv4 }
+            result.sort { ipv4Compare($0.ipv4, $1.ipv4) }
         case .latency:
             result.sort { ($0.latency ?? 999) < ($1.latency ?? 999) }
         }
@@ -47,7 +48,6 @@ struct NodesView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Picker("网络", selection: $selectedNetworkId) {
-                    Text("所有网络").tag(nil as UUID?)
                     ForEach(connectedNetworks) { network in
                         Text(network.name).tag(network.id as UUID?)
                     }
@@ -108,6 +108,13 @@ struct NodesView: View {
                     Text(connectedNetworks.isEmpty ? "无已连接网络" : "未找到节点")
                         .font(.headline)
                         .opacity(0.5)
+                    if let errorMsg = nodesErrorMessage {
+                        Text(errorMsg)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .opacity(0.7)
+                            .padding(.top, 4)
+                    }
                     if connectedNetworks.isEmpty {
                         Text("请先连接一个虚拟网络")
                             .font(.caption)
@@ -170,22 +177,39 @@ struct NodesView: View {
             .animation(.easeInOut(duration: 0.2), value: copiedAlert)
         )
         .onAppear {
+            if selectedNetworkId == nil, let first = connectedNetworks.first {
+                selectedNetworkId = first.id
+            }
             refreshNodes()
+        }
+        .onChange(of: connectedNetworks.count) { _ in
+            if selectedNetworkId == nil, let first = connectedNetworks.first {
+                selectedNetworkId = first.id
+            }
         }
     }
 
     private func refreshNodes() {
         guard !connectedNetworks.isEmpty else {
             nodes = []
+            nodesErrorMessage = nil
             return
         }
 
         isLoadingNodes = true
+        nodesErrorMessage = nil
         Task {
             do {
                 nodes = try await easyTierService.getPeerList(connectedNetworks: connectedNetworks)
             } catch {
                 nodes = []
+                nodesErrorMessage = error.localizedDescription
+                if let easyTierError = error as? EasyTierError,
+                   case .coreNotRunning = easyTierError {
+                    for network in connectedNetworks {
+                        networkStore.updateStatus(id: network.id, status: .error)
+                    }
+                }
             }
             isLoadingNodes = false
         }
@@ -279,4 +303,13 @@ private struct NodeRowView: View {
         .background(node.isLocal ? Color(NSColor.selectedContentBackgroundColor.withAlphaComponent(0.15)) : NSColor.background1.color)
         .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
     }
+}
+
+private func ipv4Compare(_ a: String, _ b: String) -> Bool {
+    let aParts = a.split(separator: ".").compactMap { Int($0) }
+    let bParts = b.split(separator: ".").compactMap { Int($0) }
+    for i in 0..<min(aParts.count, bParts.count) {
+        if aParts[i] != bParts[i] { return aParts[i] < bParts[i] }
+    }
+    return aParts.count < bParts.count
 }
