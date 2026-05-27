@@ -151,6 +151,27 @@ class EasyTierService: ObservableObject {
         }
     }
 
+    func restartActiveNetworks() async {
+        guard !activeConfigs.isEmpty else { return }
+        guard let pid = coreProcessPID else { return }
+
+        do {
+            let proxy = try await getProxy()
+            try? await stopProcessSafely(pid: pid, proxy: proxy)
+            coreProcessPID = nil
+
+            let newPid = try await launchCore(proxy: proxy)
+            coreProcessPID = newPid
+        } catch {
+            coreProcessPID = nil
+            for configPath in activeConfigs {
+                if let network = NetworkStore.shared.networks.first(where: { $0.configPath == configPath }) {
+                    NetworkStore.shared.updateStatus(id: network.id, status: .error)
+                }
+            }
+        }
+    }
+
     func forceStopAll() {
         stopHealthCheck()
         let pid = coreProcessPID

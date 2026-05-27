@@ -30,6 +30,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AppSettings.shared.applyActivationPolicy()
 
         setupTerminationHandlers()
+        setupWakeObserver()
 
         Task {
             await EasyTierHelperManager.shared.installAndConnect()
@@ -53,6 +54,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         intSource.activate()
         signal(SIGINT, SIG_IGN)
+    }
+
+    private func setupWakeObserver() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleSystemWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleSystemWake(_ notification: Notification) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            await EasyTierHelperManager.shared.installAndConnect()
+            await easyTierService.restartActiveNetworks()
+        }
     }
 
     private static func handleTerminationSignal() {
