@@ -9,8 +9,6 @@ struct SettingsView: View {
     @State private var isCheckingUpdate = false
     @State private var dismissWarningTask: Task<Void, Never>?
     @State private var checkUpdateTask: URLSessionDataTask?
-    @State private var checkAppUpdateTask: URLSessionDataTask?
-
     @State private var easytierVersion: String = ""
     @State private var appVersion: String = Bundle.main.versionStr
     @State private var appBuild: String = Bundle.main.buildStr
@@ -20,15 +18,6 @@ struct SettingsView: View {
     @State private var isDownloading = false
     @State private var downloadError: String?
     @State private var lastCoreCheckTime: Date?
-
-    @State private var isCheckingAppUpdate = false
-    @State private var hasCheckedAppUpdate = false
-    @State private var appUpdateAvailable = false
-    @State private var appLatestVersion = ""
-    @State private var appCheckError: String?
-    @State private var isAppDownloading = false
-    @State private var appDownloadError: String?
-    @State private var lastAppCheckTime: Date?
 
     @ObservedObject private var helperManager = EasyTierHelperManager.shared
     @State private var isInstallingHelper = false
@@ -267,89 +256,9 @@ struct SettingsView: View {
                             Text(appVersion)
                                 .font(.system(.body, design: .monospaced))
                             Spacer()
-                            Button(action: checkAppUpdates) {
-                                if isCheckingAppUpdate {
-                                    ProgressView()
-                                        .scaleEffect(0.7)
-                                        .frame(width: 16, height: 16)
-                                } else {
-                                    Text("检查更新")
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundColor(.accentColor)
-                            .disabled(isCheckingAppUpdate || isAppDownloading)
                         }
                         .padding()
                         .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-
-                        if isAppDownloading {
-                            HStack {
-                                ProgressView()
-                                    .scaleEffect(0.7)
-                                    .frame(width: 16, height: 16)
-                                Text("正在下载更新...")
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                            }
-                            .padding()
-                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-                        }
-
-                        if let error = appCheckError {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.orange)
-                                Text(error)
-                                    .foregroundColor(.orange)
-                                    .font(.caption)
-                                Spacer()
-                            }
-                            .padding()
-                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-                        }
-
-                        if let error = appDownloadError {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.red)
-                                Text(error)
-                                    .foregroundColor(.red)
-                                    .font(.caption)
-                                Spacer()
-                            }
-                            .padding()
-                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-                        }
-
-                        if appUpdateAvailable && !isAppDownloading {
-                            HStack {
-                                Image(systemName: "arrow.down.circle.fill")
-                                    .foregroundColor(.blue)
-                                Text("版本 \(appLatestVersion) 可用")
-                                    .foregroundColor(.blue)
-                                Spacer()
-                                Button("下载并更新") {
-                                    downloadAppUpdate()
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
-                            }
-                            .padding()
-                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-                        }
-
-                        if hasCheckedAppUpdate && !isCheckingAppUpdate && !appUpdateAvailable && !isAppDownloading && appCheckError == nil && appDownloadError == nil {
-                            HStack {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                Text("已是最新版本")
-                                    .foregroundColor(.green)
-                                Spacer()
-                            }
-                            .padding()
-                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-                        }
 
                         HStack {
                             Text("GitHub")
@@ -410,7 +319,6 @@ struct SettingsView: View {
         .onAppear(perform: detectEasytierVersion)
         .onDisappear {
             checkUpdateTask?.cancel()
-            checkAppUpdateTask?.cancel()
             dismissWarningTask?.cancel()
         }
         .onChange(of: appSettings.toggleWarning) { newValue in
@@ -586,158 +494,4 @@ struct SettingsView: View {
         }
     }
 
-    private func checkAppUpdates() {
-        if let lastCheck = lastAppCheckTime, Date().timeIntervalSince(lastCheck) < Self.updateCheckInterval {
-            hasCheckedAppUpdate = true
-            return
-        }
-
-        isCheckingAppUpdate = true
-        hasCheckedAppUpdate = false
-        appUpdateAvailable = false
-        appCheckError = nil
-        appDownloadError = nil
-
-        let urlString = "https://api.github.com/repos/begitcn/EasyTierManager/releases/latest"
-
-        guard let url = URL(string: urlString) else {
-            appCheckError = "无效的地址"
-            isCheckingAppUpdate = false
-            hasCheckedAppUpdate = true
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.setValue("EasyTierManager/\(Bundle.main.versionStr)", forHTTPHeaderField: "User-Agent")
-
-        checkAppUpdateTask?.cancel()
-        checkAppUpdateTask = URLSession.shared.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    appCheckError = "网络错误: \(error.localizedDescription)"
-                    isCheckingAppUpdate = false
-                    hasCheckedAppUpdate = true
-                    return
-                }
-
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    appCheckError = "服务器响应异常"
-                    isCheckingAppUpdate = false
-                    hasCheckedAppUpdate = true
-                    return
-                }
-
-                guard httpResponse.statusCode == 200 else {
-                    let msg: String
-                    if httpResponse.statusCode == 403 {
-                        msg = "GitHub API 速率限制，请稍后再试"
-                    } else if httpResponse.statusCode == 404 {
-                        msg = "未找到版本信息"
-                    } else {
-                        msg = "服务器响应异常 (HTTP \(httpResponse.statusCode))"
-                    }
-                    appCheckError = msg
-                    isCheckingAppUpdate = false
-                    hasCheckedAppUpdate = true
-                    return
-                }
-
-                guard let data = data,
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let tagName = json["tag_name"] as? String else {
-                    appCheckError = "解析响应失败"
-                    isCheckingAppUpdate = false
-                    hasCheckedAppUpdate = true
-                    return
-                }
-
-                appLatestVersion = tagName
-                let current = appVersion.replacingOccurrences(of: "v", with: "")
-                let latest = tagName.replacingOccurrences(of: "v", with: "")
-
-                appUpdateAvailable = current.compare(latest, options: .numeric) == .orderedAscending
-                isCheckingAppUpdate = false
-                hasCheckedAppUpdate = true
-                lastAppCheckTime = Date()
-            }
-        }
-        checkAppUpdateTask?.resume()
-    }
-
-    private func downloadAppUpdate() {
-        isAppDownloading = true
-        appDownloadError = nil
-
-        let version = appLatestVersion.replacingOccurrences(of: "v", with: "")
-        let zipName = "EasyTierManager_v\(version).zip"
-        guard let url = URL(string: "https://github.com/begitcn/EasyTierManager/releases/download/\(appLatestVersion)/\(zipName)") else {
-            appDownloadError = "无效的下载地址"
-            isAppDownloading = false
-            return
-        }
-
-        Task {
-            do {
-                let (data, _) = try await URLSession.shared.data(from: url)
-
-                let tempDir = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("easytiermanager-update-\(UUID().uuidString)")
-                defer { try? FileManager.default.removeItem(at: tempDir) }
-
-                try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-
-                let zipPath = tempDir.appendingPathComponent(zipName)
-                try data.write(to: zipPath)
-
-                let unzip = Process()
-                unzip.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-                unzip.arguments = ["-o", zipPath.path, "-d", tempDir.path]
-                try unzip.run()
-                unzip.waitUntilExit()
-
-                guard unzip.terminationStatus == 0 else {
-                    throw NSError(domain: "update", code: -1, userInfo: [NSLocalizedDescriptionKey: "解压失败"])
-                }
-
-                let appBundleName = "EasyTierManager.app"
-                let newAppPath = tempDir.appendingPathComponent(appBundleName).path
-                guard FileManager.default.fileExists(atPath: newAppPath) else {
-                    throw NSError(domain: "update", code: -2, userInfo: [NSLocalizedDescriptionKey: "未找到应用包"])
-                }
-
-                let currentAppPath = Bundle.main.bundlePath
-
-                let script = """
-                #!/bin/bash
-                sleep 1
-                rm -rf "\(currentAppPath)"
-                cp -R "\(newAppPath)" "\(currentAppPath)"
-                chmod +x "\(currentAppPath)/Contents/MacOS/EasyTierManager"
-                open "\(currentAppPath)"
-                """
-
-                let scriptPath = tempDir.appendingPathComponent("updater.sh")
-                try script.write(to: scriptPath, atomically: true, encoding: .utf8)
-                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath.path)
-
-                let updater = Process()
-                updater.executableURL = URL(fileURLWithPath: "/bin/bash")
-                updater.arguments = [scriptPath.path]
-                try updater.run()
-
-                await MainActor.run {
-                    isAppDownloading = false
-                }
-
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    NSApplication.shared.terminate(nil)
-                }
-            } catch {
-                await MainActor.run {
-                    appDownloadError = error.localizedDescription
-                    isAppDownloading = false
-                }
-            }
-        }
-    }
 }
