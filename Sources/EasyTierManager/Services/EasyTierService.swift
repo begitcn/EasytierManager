@@ -20,6 +20,8 @@ class EasyTierService: ObservableObject {
     private let healthCheckInterval: TimeInterval = 30
     private var consecutiveFailures = 0
     private let maxConsecutiveFailures = 5
+    private var sleepConfigs: [String] = []
+    private var isSleeping = false
 
     private init() {}
 
@@ -158,18 +160,112 @@ class EasyTierService: ObservableObject {
 
     func restartActiveNetworks() async {
         guard !activeConfigs.isEmpty else { return }
-        guard let pid = coreProcessPID else { return }
+
+        for configPath in activeConfigs {
+            if let network = NetworkStore.shared.networks.first(where: { $0.configPath == configPath }) {
+                NetworkStore.shared.updateStatus(id: network.id, status: .connecting)
+            }
+        }
 
         do {
             let proxy = try await getProxy()
-            try? await stopProcessSafely(pid: pid, proxy: proxy)
-            coreProcessPID = nil
+            if let pid = coreProcessPID {
+                try? await stopProcessSafely(pid: pid, proxy: proxy)
+                coreProcessPID = nil
+            }
 
             let newPid = try await launchCore(proxy: proxy)
             coreProcessPID = newPid
+            consecutiveFailures = 0
+            startHealthCheck()
+
+            for configPath in activeConfigs {
+                if let network = NetworkStore.shared.networks.first(where: { $0.configPath == configPath }) {
+                    NetworkStore.shared.updateStatus(id: network.id, status: .connected)
+                }
+            }
         } catch {
             coreProcessPID = nil
             for configPath in activeConfigs {
+                if let network = NetworkStore.shared.networks.first(where: { $0.configPath == configPath }) {
+                    NetworkStore.shared.updateStatus(id: network.id, status: .error)
+                }
+            }
+        }
+    }
+
+    func prepareForSleep() async {
+        guard !activeConfigs.isEmpty else { return }
+        isSleeping = true
+        sleepConfigs = activeConfigs
+
+        stopHealthCheck()
+
+        if let pid = coreProcessPID {
+            if let proxy = helperManager.proxy {
+                try? await stopProcessSafely(pid: pid, proxy: proxy)
+            }
+            coreProcessPID = nil
+        }
+
+        helperManager.disconnect()
+    }
+
+    func restoreAfterWake() async {
+        isSleeping = false
+
+        let configsToRestore = !sleepConfigs.isEmpty ? sleepConfigs : activeConfigs
+        guard !configsToRestore.isEmpty else { return }
+
+        for configPath in configsToRestore {
+            if let network = NetworkStore.shared.networks.first(where: { $0.configPath == configPath }) {
+                NetworkStore.shared.updateStatus(id: network.id, status: .connecting)
+            }
+        }
+
+        activeConfigs = configsToRestore
+
+        var success = false
+        let maxRetries = 5
+        for attempt in 1...maxRetries {
+            do {
+                if attempt > 1 {
+                    try await Task.sleep(nanoseconds: UInt64(attempt) * 1_000_000_000)
+                } else {
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                }
+
+                await helperManager.installAndConnect()
+                guard helperManager.isHelperConnected else { continue }
+
+                let proxy = try await getProxy()
+                if let pid = coreProcessPID {
+                    try? await stopProcessSafely(pid: pid, proxy: proxy)
+                    coreProcessPID = nil
+                }
+
+                let newPid = try await launchCore(proxy: proxy)
+                coreProcessPID = newPid
+                consecutiveFailures = 0
+                startHealthCheck()
+
+                for configPath in configsToRestore {
+                    if let network = NetworkStore.shared.networks.first(where: { $0.configPath == configPath }) {
+                        NetworkStore.shared.updateStatus(id: network.id, status: .connected)
+                    }
+                }
+                success = true
+                break
+            } catch {
+                // Continue retry loop
+            }
+        }
+
+        sleepConfigs = []
+
+        if !success {
+            coreProcessPID = nil
+            for configPath in configsToRestore {
                 if let network = NetworkStore.shared.networks.first(where: { $0.configPath == configPath }) {
                     NetworkStore.shared.updateStatus(id: network.id, status: .error)
                 }

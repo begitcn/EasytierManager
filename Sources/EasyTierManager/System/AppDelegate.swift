@@ -11,6 +11,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusBarController: StatusBarController?
     private var signalSources: [DispatchSourceSignal] = []
     private var wakeObserver: NSObjectProtocol?
+    private var sleepObserver: NSObjectProtocol?
 
     @MainActor
     func applicationDidFinishLaunching(_: Notification) {
@@ -32,7 +33,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AppSettings.shared.applyActivationPolicy()
 
         setupTerminationHandlers()
-        setupWakeObserver()
+        setupSleepWakeObservers()
 
         Task {
             await EasyTierHelperManager.shared.installAndConnect()
@@ -60,7 +61,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         signalSources.append(intSource)
     }
 
-    private func setupWakeObserver() {
+    private func setupSleepWakeObservers() {
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,
@@ -68,13 +69,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             self?.handleSystemWake()
         }
+
+        sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleSystemSleep()
+        }
+    }
+
+    private func handleSystemSleep() {
+        Task { @MainActor in
+            await easyTierService.prepareForSleep()
+        }
     }
 
     private func handleSystemWake() {
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            await EasyTierHelperManager.shared.installAndConnect()
-            await easyTierService.restartActiveNetworks()
+            await easyTierService.restoreAfterWake()
         }
     }
 
@@ -112,6 +125,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         signalSources.removeAll()
         if let wakeObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+        }
+        if let sleepObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(sleepObserver)
         }
         easyTierService.forceStopAll()
         EasyTierHelperManager.shared.disconnect()
