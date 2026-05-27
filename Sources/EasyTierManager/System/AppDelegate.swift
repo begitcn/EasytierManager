@@ -9,6 +9,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var easyTierService: EasyTierService!
     var mainWindowController: MainWindowController!
     var statusBarController: StatusBarController?
+    private var signalSources: [DispatchSourceSignal] = []
+    private var wakeObserver: NSObjectProtocol?
 
     @MainActor
     func applicationDidFinishLaunching(_: Notification) {
@@ -47,6 +49,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         termSource.activate()
         signal(SIGTERM, SIG_IGN)
+        signalSources.append(termSource)
 
         let intSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: signalQueue)
         intSource.setEventHandler {
@@ -54,18 +57,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         intSource.activate()
         signal(SIGINT, SIG_IGN)
+        signalSources.append(intSource)
     }
 
     private func setupWakeObserver() {
-        NSWorkspace.shared.notificationCenter.addObserver(
-            self,
-            selector: #selector(handleSystemWake),
-            name: NSWorkspace.didWakeNotification,
-            object: nil
-        )
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleSystemWake()
+        }
     }
 
-    @objc private func handleSystemWake(_ notification: Notification) {
+    private func handleSystemWake() {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             await EasyTierHelperManager.shared.installAndConnect()
@@ -74,13 +79,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static func handleTerminationSignal() {
-        let semaphore = DispatchSemaphore(value: 0)
+        let group = DispatchGroup()
+        group.enter()
         DispatchQueue.main.async {
-            EasyTierService.shared.forceStopAll()
-            EasyTierHelperManager.shared.disconnect()
-            semaphore.signal()
+            EasyTierService.shared.forceStopAll {
+                EasyTierHelperManager.shared.disconnect()
+                group.leave()
+            }
         }
-        _ = semaphore.wait(timeout: .now() + 8.0)
+        _ = group.wait(timeout: .now() + 8.0)
         exit(0)
     }
 
@@ -99,6 +106,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_: Notification) {
+        for source in signalSources {
+            source.cancel()
+        }
+        signalSources.removeAll()
+        if let wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+        }
         easyTierService.forceStopAll()
         EasyTierHelperManager.shared.disconnect()
     }

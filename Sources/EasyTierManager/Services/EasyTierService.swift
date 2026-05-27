@@ -1,4 +1,5 @@
 import Foundation
+import os
 @preconcurrency import EasyTierHelperShared
 
 @MainActor
@@ -17,6 +18,8 @@ class EasyTierService: ObservableObject {
 
     private var healthCheckTask: Task<Void, Never>?
     private let healthCheckInterval: TimeInterval = 30
+    private var consecutiveFailures = 0
+    private let maxConsecutiveFailures = 5
 
     private init() {}
 
@@ -24,14 +27,14 @@ class EasyTierService: ObservableObject {
         if !helperManager.isHelperConnected {
             await helperManager.installAndConnect()
         }
-        guard let anyProxy = helperManager.proxy,
-              let proxy = anyProxy as? EasyTierHelperProtocol else {
+        guard let proxy = helperManager.proxy else {
             throw EasyTierError.helperNotConnected
         }
         return proxy
     }
 
     func startNetwork(configPath: String) async throws {
+        guard !activeConfigs.contains(configPath) else { return }
         let proxy = try await getProxy()
         isConnecting = true
         defer { isConnecting = false }
@@ -45,6 +48,7 @@ class EasyTierService: ObservableObject {
         do {
             let newPid = try await launchCore(proxy: proxy)
             coreProcessPID = newPid
+            consecutiveFailures = 0
             startHealthCheck()
         } catch {
             activeConfigs.removeLast()
@@ -113,8 +117,7 @@ class EasyTierService: ObservableObject {
 
     func isCoreAlive() async -> Bool {
         guard let pid = coreProcessPID else { return false }
-        guard let anyProxy = helperManager.proxy,
-              let proxy = anyProxy as? EasyTierHelperProtocol else { return false }
+        guard let proxy = helperManager.proxy else { return false }
         return await withCheckedContinuation { continuation in
             proxy.isProcessRunning(pid: pid) { running in
                 continuation.resume(returning: running)
@@ -127,28 +130,30 @@ class EasyTierService: ObservableObject {
         return parseNodeJSON(output)
     }
 
-    func getCoreVersion() -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: corePath)
-        process.arguments = ["--version"]
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = output
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-            let data = output.fileHandleForReading.readDataToEndOfFile()
-            let outputStr = String(data: data, encoding: .utf8) ?? ""
-            let version = outputStr
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .components(separatedBy: .whitespacesAndNewlines)
-                .first?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return version.isEmpty ? "" : version
-        } catch {
-            return ""
-        }
+    func getCoreVersion() async -> String {
+        let path = corePath
+        return await Task.detached(priority: .utility) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: path)
+            process.arguments = ["--version"]
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = output
+            do {
+                try process.run()
+                let data = output.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                let outputStr = String(data: data, encoding: .utf8) ?? ""
+                let version = outputStr
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .components(separatedBy: .whitespacesAndNewlines)
+                    .first?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return version.isEmpty ? "" : version
+            } catch {
+                return ""
+            }
+        }.value
     }
 
     func restartActiveNetworks() async {
@@ -172,34 +177,32 @@ class EasyTierService: ObservableObject {
         }
     }
 
-    func forceStopAll() {
+    func forceStopAll(completion: (() -> Void)? = nil) {
         stopHealthCheck()
         let pid = coreProcessPID
         coreProcessPID = nil
         activeConfigs = []
 
-        guard let anyProxy = helperManager.proxy,
-              let proxy = anyProxy as? EasyTierHelperProtocol else { return }
-
-        let semaphore = DispatchSemaphore(value: 0)
+        guard let proxy = helperManager.proxy else {
+            completion?()
+            return
+        }
 
         if let pid {
             proxy.stopProcess(pid: pid) { _, _ in
                 DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
                     proxy.forceStopProcess(pid: pid) { _, _ in
                         proxy.stopAllProcesses { _, _ in
-                            semaphore.signal()
+                            completion?()
                         }
                     }
                 }
             }
         } else {
             proxy.stopAllProcesses { _, _ in
-                semaphore.signal()
+                completion?()
             }
         }
-
-        _ = semaphore.wait(timeout: .now() + 5.0)
     }
 
     private func startHealthCheck() {
@@ -222,13 +225,28 @@ class EasyTierService: ObservableObject {
     private func performHealthCheck() async {
         guard !activeConfigs.isEmpty, let _ = coreProcessPID else { return }
         let alive = await isCoreAlive()
-        guard !alive else { return }
+        if alive {
+            consecutiveFailures = 0
+            return
+        }
+
+        consecutiveFailures += 1
+        if consecutiveFailures > maxConsecutiveFailures {
+            stopHealthCheck()
+            for configPath in activeConfigs {
+                if let network = NetworkStore.shared.networks.first(where: { $0.configPath == configPath }) {
+                    NetworkStore.shared.updateStatus(id: network.id, status: .error)
+                }
+            }
+            return
+        }
 
         coreProcessPID = nil
         do {
             let proxy = try await getProxy()
             let newPid = try await launchCore(proxy: proxy)
             coreProcessPID = newPid
+            consecutiveFailures = 0
         } catch {
             for configPath in activeConfigs {
                 if let network = NetworkStore.shared.networks.first(where: { $0.configPath == configPath }) {
@@ -248,12 +266,10 @@ class EasyTierService: ObservableObject {
 
         return try await withCheckedThrowingContinuation { continuation in
             proxy.startProcess(executablePath: corePath, arguments: args) { success, pid, error in
-                Task { @MainActor in
-                    if success && pid > 0 {
-                        continuation.resume(returning: Int(pid))
-                    } else {
-                        continuation.resume(throwing: EasyTierError.startFailed(error ?? "Unknown error"))
-                    }
+                if success && pid > 0 {
+                    continuation.resume(returning: Int(pid))
+                } else {
+                    continuation.resume(throwing: EasyTierError.startFailed(error ?? "Unknown error"))
                 }
             }
         }
@@ -413,15 +429,15 @@ class EasyTierService: ObservableObject {
 }
 
 private final class CLIResumeGuard: @unchecked Sendable {
-    private let lock = NSObject()
+    private var _lock = os_unfair_lock()
     private var resumed = false
 
     func safeResume(_ continuation: CheckedContinuation<String, any Error>,
                     block: () throws -> String) {
-        objc_sync_enter(lock)
-        if resumed { objc_sync_exit(lock); return }
+        os_unfair_lock_lock(&_lock)
+        if resumed { os_unfair_lock_unlock(&_lock); return }
         resumed = true
-        objc_sync_exit(lock)
+        os_unfair_lock_unlock(&_lock)
         do {
             continuation.resume(returning: try block())
         } catch {

@@ -22,6 +22,8 @@ class MainWindowController: NSWindowController {
                     .environmentObject(navigationVM)
                     .environmentObject(networkStore)
                     .environmentObject(easyTierService)
+                    .environmentObject(AppSettings.shared)
+                    .environmentObject(EasyTierHelperManager.shared)
             )
         )
 

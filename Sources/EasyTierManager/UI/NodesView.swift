@@ -11,6 +11,7 @@ struct NodesView: View {
     @State private var copiedValue = ""
     @State private var isLoadingNodes = false
     @State private var nodesErrorMessage: String?
+    @State private var autoRefreshTask: Task<Void, Never>?
 
     enum SortOrder: String, CaseIterable {
         case name = "名称"
@@ -48,6 +49,7 @@ struct NodesView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Picker("网络", selection: $selectedNetworkId) {
+                    Text("未选择").tag(nil as UUID?)
                     ForEach(connectedNetworks) { network in
                         Text(network.name).tag(network.id as UUID?)
                     }
@@ -181,8 +183,23 @@ struct NodesView: View {
                 selectedNetworkId = first.id
             }
             refreshNodes()
+            autoRefreshTask?.cancel()
+            autoRefreshTask = Task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 30_000_000_000)
+                    guard !Task.isCancelled else { break }
+                    refreshNodes()
+                }
+            }
+        }
+        .onDisappear {
+            autoRefreshTask?.cancel()
+            autoRefreshTask = nil
         }
         .onChange(of: connectedNetworks.count) { _ in
+            if let selected = selectedNetworkId, !connectedNetworks.contains(where: { $0.id == selected }) {
+                selectedNetworkId = nil
+            }
             if selectedNetworkId == nil, let first = connectedNetworks.first {
                 selectedNetworkId = first.id
             }
@@ -222,7 +239,8 @@ struct NodesView: View {
         withAnimation {
             copiedAlert = true
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
             withAnimation {
                 copiedAlert = false
             }

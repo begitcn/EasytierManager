@@ -19,9 +19,8 @@ private final class EasyTierHelperService: NSObject, EasyTierHelperProtocol {
         process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = arguments
 
-        let devNull = FileHandle(fileDescriptor: open("/dev/null", O_WRONLY), closeOnDealloc: true)
-        process.standardOutput = devNull
-        process.standardError = devNull
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
 
         process.terminationHandler = { [weak self] p in
             guard let self else { return }
@@ -49,52 +48,69 @@ private final class EasyTierHelperService: NSObject, EasyTierHelperProtocol {
     }
 
     func stopProcess(pid: Int, completion: @escaping (Bool, String?) -> Void) {
-        let result = kill(pid_t(pid), SIGTERM)
-        if result == 0 {
+        processLock.lock()
+        let process = runningProcesses[pid]
+        processLock.unlock()
+
+        if let process {
+            process.terminate()
             completion(true, nil)
         } else {
-            let errorStr = String(cString: strerror(errno))
-            completion(false, errorStr)
+            let result = kill(pid_t(pid), SIGTERM)
+            completion(result == 0, result != 0 ? String(cString: strerror(errno)) : nil)
         }
     }
 
     func isProcessRunning(pid: Int, completion: @escaping (Bool) -> Void) {
-        let result = kill(pid_t(pid), 0)
-        completion(result == 0)
+        processLock.lock()
+        let tracked = runningProcesses[pid] != nil
+        processLock.unlock()
+
+        if tracked {
+            completion(true)
+        } else {
+            completion(kill(pid_t(pid), 0) == 0)
+        }
     }
 
     func forceStopProcess(pid: Int, completion: @escaping (Bool, String?) -> Void) {
-        let result = kill(pid_t(pid), SIGKILL)
-        if result == 0 {
+        processLock.lock()
+        let process = runningProcesses[pid]
+        processLock.unlock()
+
+        if let process, process.isRunning {
+            kill(pid_t(process.processIdentifier), SIGKILL)
             completion(true, nil)
         } else {
-            let errorStr = String(cString: strerror(errno))
-            completion(false, errorStr)
+            let result = kill(pid_t(pid), SIGKILL)
+            completion(result == 0, result != 0 ? String(cString: strerror(errno)) : nil)
         }
     }
 
     func stopAllProcesses(completion: @escaping (Bool, String?) -> Void) {
         processLock.lock()
-        let pids = Array(runningProcesses.keys)
+        let processes = Array(runningProcesses)
         processLock.unlock()
 
-        guard !pids.isEmpty else {
+        guard !processes.isEmpty else {
             completion(true, nil)
             return
         }
 
-        for pid in pids {
-            kill(pid_t(pid), SIGTERM)
+        for (_, process) in processes {
+            process.terminate()
         }
 
         DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) { [weak self] in
             guard let self else { return }
             self.processLock.lock()
-            for pid in pids {
+            for (pid, _) in processes {
                 if kill(pid_t(pid), 0) == 0 {
                     kill(pid_t(pid), SIGKILL)
                 }
-                self.runningProcesses.removeValue(forKey: pid)
+                if kill(pid_t(pid), 0) != 0 {
+                    self.runningProcesses.removeValue(forKey: pid)
+                }
             }
             self.processLock.unlock()
             completion(true, nil)
@@ -108,22 +124,29 @@ private final class EasyTierHelperService: NSObject, EasyTierHelperProtocol {
 
         let outputPipe = Pipe()
         task.standardOutput = outputPipe
-        task.standardError = Pipe()
+        task.standardError = FileHandle.nullDevice
 
-        do {
-            try task.run()
-            task.waitUntilExit()
+        let timeoutItem = DispatchWorkItem {
+            if task.isRunning { task.terminate() }
+        }
 
+        task.terminationHandler = { _ in
+            timeoutItem.cancel()
             let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
             let output = String(data: data, encoding: .utf8) ?? ""
-
             if task.terminationStatus == 0 {
                 let lines = output.components(separatedBy: .newlines).filter { !$0.isEmpty }
                 completion(lines)
             } else {
                 completion([])
             }
+        }
+
+        do {
+            try task.run()
+            DispatchQueue.global().asyncAfter(deadline: .now() + 10.0, execute: timeoutItem)
         } catch {
+            timeoutItem.cancel()
             completion([])
         }
     }
@@ -142,10 +165,12 @@ private final class EasyTierHelperListenerDelegate: NSObject, NSXPCListenerDeleg
         activeConnections.add(newConnection)
         connectionLock.unlock()
 
-        newConnection.invalidationHandler = { [weak self] in
+        newConnection.invalidationHandler = { [weak self, weak newConnection] in
             guard let self else { return }
             self.connectionLock.lock()
-            self.activeConnections.remove(newConnection)
+            if let newConnection {
+                self.activeConnections.remove(newConnection)
+            }
             let remaining = self.activeConnections.count
             self.connectionLock.unlock()
             if remaining == 0 {

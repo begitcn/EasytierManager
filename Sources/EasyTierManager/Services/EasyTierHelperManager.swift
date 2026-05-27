@@ -9,6 +9,8 @@ class EasyTierHelperManager: ObservableObject {
     @Published private(set) var lastError: String?
 
     private var connection: NSXPCConnection?
+    private var cachedProxy: EasyTierHelperProtocol?
+    private var connectionValid = false
 
     static let helperInstallPath = "/Library/PrivilegedHelperTools/\(EasyTierHelperConstants.machServiceName)"
     static let helperPlistPath = "/Library/LaunchDaemons/\(EasyTierHelperConstants.daemonPlistName)"
@@ -19,7 +21,7 @@ class EasyTierHelperManager: ObservableObject {
         lastError = nil
 
         do {
-            try connectToHelper()
+            try await connectToHelper()
             isHelperConnected = true
             return
         } catch {}
@@ -33,12 +35,55 @@ class EasyTierHelperManager: ObservableObject {
 
     func reinstallHelper() async throws {
         lastError = nil
-        try await installHelperManually()
+        disconnect()
+
+        let sourceBin = findHelperBinary()
+        guard let sourceBin else {
+            throw EasyTierError.startFailed("Helper binary not found. Run 'swift build' first, then try again.")
+        }
+
+        let shellScript = """
+        launchctl unload '\(Self.helperPlistPath)' 2>/dev/null || true
+        cp '\(sourceBin)' '\(Self.helperInstallPath)'
+        chmod +x '\(Self.helperInstallPath)'
+        chown root:wheel '\(Self.helperInstallPath)'
+        launchctl load '\(Self.helperPlistPath)'
+        """
+
+        let appleScript = """
+        do shell script "\(shellScript)" with administrator privileges
+        """
+
+        let script = NSAppleScript(source: appleScript)
+        var errorDict: NSDictionary?
+        script?.executeAndReturnError(&errorDict)
+
+        if let errorDict = errorDict {
+            let message = errorDict[NSAppleScript.errorMessage] as? String ?? "Unknown error"
+            throw NSError(domain: "EasyTierHelperManager", code: -5,
+                           userInfo: [NSLocalizedDescriptionKey: "安装失败: \(message)"])
+        }
+
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+
+        for i in 0..<3 {
+            do {
+                try await connectToHelper()
+                isHelperConnected = true
+                return
+            } catch {
+                if i < 2 {
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                } else {
+                    throw error
+                }
+            }
+        }
     }
 
     func installHelperManually() async throws {
         if FileManager.default.fileExists(atPath: Self.helperInstallPath) {
-            try connectToHelper()
+            try await connectToHelper()
             isHelperConnected = true
             return
         }
@@ -87,7 +132,7 @@ class EasyTierHelperManager: ObservableObject {
 
         for i in 0..<3 {
             do {
-                try connectToHelper()
+                try await connectToHelper()
                 isHelperConnected = true
                 return
             } catch {
@@ -100,16 +145,25 @@ class EasyTierHelperManager: ObservableObject {
         }
     }
 
-    var proxy: AnyObject? {
-        guard let connection else { return nil }
-        return connection.remoteObjectProxyWithErrorHandler { [weak self] error in
+    var proxy: EasyTierHelperProtocol? {
+        guard let connection, connectionValid else {
+            cachedProxy = nil
+            return nil
+        }
+        if let cachedProxy { return cachedProxy }
+        let p = connection.remoteObjectProxyWithErrorHandler { [weak self] _ in
             Task { @MainActor in
+                self?.cachedProxy = nil
                 self?.isHelperConnected = false
             }
-        } as AnyObject
+        } as? EasyTierHelperProtocol
+        cachedProxy = p
+        return p
     }
 
     func disconnect() {
+        cachedProxy = nil
+        connectionValid = false
         connection?.invalidate()
         connection = nil
         isHelperConnected = false
@@ -154,53 +208,59 @@ class EasyTierHelperManager: ObservableObject {
         return nil
     }
 
-    private func connectToHelper() throws {
+    private func connectToHelper() async throws {
         let newConnection = NSXPCConnection(machServiceName: EasyTierHelperConstants.machServiceName)
         newConnection.remoteObjectInterface = NSXPCInterface(with: EasyTierHelperProtocol.self)
         newConnection.interruptionHandler = { [weak self] in
             Task { @MainActor in
+                self?.cachedProxy = nil
+                self?.connectionValid = false
                 self?.isHelperConnected = false
             }
         }
         newConnection.invalidationHandler = { [weak self] in
             Task { @MainActor in
+                self?.cachedProxy = nil
+                self?.connectionValid = false
                 self?.isHelperConnected = false
                 self?.connection = nil
             }
         }
 
+        self.connection?.invalidate()
         self.connection = newConnection
+        self.cachedProxy = nil
+        self.connectionValid = true
         newConnection.resume()
 
-        let semaphore = DispatchSemaphore(value: 0)
-        var pingSuccess = false
-        var connectionError: Error?
+        let pingSuccess: Bool = try await withThrowingTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Bool, Error>) in
+                    guard let proxy = newConnection.remoteObjectProxyWithErrorHandler({ error in
+                        continuation.resume(throwing: error)
+                    }) as? EasyTierHelperProtocol else {
+                        continuation.resume(throwing: NSError(domain: "EasyTierHelperManager", code: -4,
+                                       userInfo: [NSLocalizedDescriptionKey: "无法创建代理"]))
+                        return
+                    }
 
-        let proxy = newConnection.remoteObjectProxyWithErrorHandler { error in
-            connectionError = error
-            semaphore.signal()
-        } as AnyObject
-
-        proxy.ping { success, _ in
-            pingSuccess = success
-            semaphore.signal()
-        }
-
-        let timeout = semaphore.wait(timeout: .now() + 5.0)
-        if timeout == .timedOut {
-            connection?.invalidate()
-            connection = nil
-            throw NSError(domain: "EasyTierHelperManager", code: -2,
-                           userInfo: [NSLocalizedDescriptionKey: "连接超时"])
-        }
-
-        if let error = connectionError {
-            connection?.invalidate()
-            connection = nil
-            throw error
+                    proxy.ping { success, _ in
+                        continuation.resume(returning: success)
+                    }
+                }
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: 5_000_000_000)
+                throw NSError(domain: "EasyTierHelperManager", code: -2,
+                               userInfo: [NSLocalizedDescriptionKey: "连接超时"])
+            }
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
         }
 
         if !pingSuccess {
+            connectionValid = false
             connection?.invalidate()
             connection = nil
             throw NSError(domain: "EasyTierHelperManager", code: -3,

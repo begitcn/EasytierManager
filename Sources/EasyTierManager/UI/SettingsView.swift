@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var easyTierService: EasyTierService
-    @ObservedObject private var appSettings = AppSettings.shared
+    @EnvironmentObject var appSettings: AppSettings
 
     private static let updateCheckInterval: TimeInterval = 600
 
@@ -19,9 +19,10 @@ struct SettingsView: View {
     @State private var downloadError: String?
     @State private var lastCoreCheckTime: Date?
 
-    @ObservedObject private var helperManager = EasyTierHelperManager.shared
+    @EnvironmentObject var helperManager: EasyTierHelperManager
     @State private var isInstallingHelper = false
     @State private var helperError: String?
+    @State private var showHelperInfo = false
 
     private var helpersPath: String {
         Bundle.main.bundlePath + "/Contents/Helpers"
@@ -38,7 +39,23 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                SettingsSection(title: "特权助手") {
+                SettingsSection(title: "特权助手", trailing:
+                    Button {
+                        showHelperInfo = true
+                    } label: {
+                        Image(systemName: "questionmark.circle.fill")
+                            .font(.caption)
+                            .opacity(0.5)
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showHelperInfo) {
+                        Text("特权助手需要 root 权限来运行 easytier-core，点击\"安装助手\"并输入密码")
+                            .font(.caption)
+                            .padding(12)
+                            .frame(width: 260)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                ) {
                     VStack(spacing: 0) {
                         HStack {
                             Text("助手状态")
@@ -83,19 +100,7 @@ struct SettingsView: View {
                                 Spacer()
                             }
                             .padding()
-                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
                         }
-
-                        HStack {
-                            Text("说明")
-                                .opacity(0.6)
-                                .frame(width: 140, alignment: .leading)
-                            Text("特权助手需要 root 权限来运行 easytier-core，点击\"安装助手\"并输入密码")
-                                .font(.caption)
-                                .opacity(0.6)
-                            Spacer()
-                        }
-                        .padding()
                     }
                 }
 
@@ -108,6 +113,15 @@ struct SettingsView: View {
 
                             Text(easytierVersion.isEmpty ? "检测中..." : easytierVersion)
                                 .font(.system(.body, design: .monospaced))
+
+                            if !easytierVersion.isEmpty && !updateAvailable && !isDownloading {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .font(.caption)
+                                Text("已是最新版本")
+                                    .foregroundColor(.green)
+                                    .font(.caption)
+                            }
 
                             Spacer()
 
@@ -170,80 +184,49 @@ struct SettingsView: View {
                             .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
                         }
 
-                        if !easytierVersion.isEmpty && !updateAvailable && !isDownloading {
-                            HStack {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                Text("已是最新版本")
-                                    .foregroundColor(.green)
-                                Spacer()
-                            }
-                            .padding()
-                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-                        }
                     }
                 }
 
                 SettingsSection(title: "系统") {
-                    VStack(spacing: 0) {
-                        HStack {
-                            Toggle("", isOn: Binding(
-                                get: { appSettings.isLaunchAtLogin },
-                                set: { appSettings.setLaunchAtLogin($0) }
-                            ))
-                            Text("开机启动")
-                            Spacer()
-                        }
-                        .padding()
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 0) {
+                        toggleRow(title: "开机启动", isOn: Binding(
+                            get: { appSettings.isLaunchAtLogin },
+                            set: { appSettings.setLaunchAtLogin($0) }
+                        ))
+                        .border(width: 1, edges: [.bottom, .trailing], color: NSColor.border2.color)
+
+                        toggleRow(title: "显示系统托盘", isOn: Binding(
+                            get: { appSettings.showMenuBarIcon },
+                            set: { appSettings.setMenuBarIcon($0) }
+                        ))
                         .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
 
-                        HStack {
-                            Toggle("", isOn: Binding(
-                                get: { appSettings.showMenuBarIcon },
-                                set: { appSettings.setMenuBarIcon($0) }
-                            ))
-                            Text("显示系统托盘")
-                            Spacer()
-                        }
-                        .padding()
+                        toggleRow(title: "显示程序坞图标", isOn: Binding(
+                            get: { appSettings.showDockIcon },
+                            set: { appSettings.setDockIcon($0) }
+                        ))
+                        .border(width: 1, edges: [.bottom, .trailing], color: NSColor.border2.color)
+
+                        toggleRow(title: "启动自动连接", isOn: Binding(
+                            get: { appSettings.autoConnectOnLaunch },
+                            set: { appSettings.setAutoConnectOnLaunch($0) }
+                        ))
                         .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                    }
 
-                        HStack {
-                            Toggle("", isOn: Binding(
-                                get: { appSettings.showDockIcon },
-                                set: { appSettings.setDockIcon($0) }
-                            ))
-                            Text("显示程序坞图标")
+                    if let warning = appSettings.toggleWarning {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.red)
+                                .font(.caption)
+                            Text(warning)
+                                .foregroundColor(.red)
+                                .font(.caption)
                             Spacer()
                         }
-                        .padding()
-                        .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-
-                        if let warning = appSettings.toggleWarning {
-                            HStack(spacing: 6) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.red)
-                                    .font(.caption)
-                                Text(warning)
-                                    .foregroundColor(.red)
-                                    .font(.caption)
-                                Spacer()
-                            }
-                            .padding(.horizontal)
-                            .padding(.vertical, 8)
-                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-                            .transition(.opacity)
-                        }
-
-                        HStack {
-                            Toggle("", isOn: Binding(
-                                get: { appSettings.autoConnectOnLaunch },
-                                set: { appSettings.setAutoConnectOnLaunch($0) }
-                            ))
-                            Text("启动自动连接")
-                            Spacer()
-                        }
-                        .padding()
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
+                        .transition(.opacity)
                     }
                 }
 
@@ -305,7 +288,7 @@ struct SettingsView: View {
 
                 HStack {
                     Spacer()
-                    Text("EasyTier")
+                    Text("EasyTierManager")
                         .font(.footnote)
                         .opacity(0.5)
                     Spacer()
@@ -340,7 +323,20 @@ struct SettingsView: View {
 
         Task {
             do {
+                let savedConfigs = easyTierService.activeConfigs
+
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    easyTierService.forceStopAll {
+                        continuation.resume()
+                    }
+                }
+
                 try await EasyTierHelperManager.shared.reinstallHelper()
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+
+                for configPath in savedConfigs {
+                    try? await easyTierService.startNetwork(configPath: configPath)
+                }
             } catch {
                 helperError = error.localizedDescription
             }
@@ -349,37 +345,36 @@ struct SettingsView: View {
     }
 
     private func detectEasytierVersion() {
-        let corePath = helpersPath + "/easytier-core"
-        guard FileManager.default.isExecutableFile(atPath: corePath) else {
+        let path = helpersPath + "/easytier-core"
+        guard FileManager.default.isExecutableFile(atPath: path) else {
             easytierVersion = "未安装"
             return
         }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: corePath)
-        process.arguments = ["--version"]
-
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = output
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-
-            let data = output.fileHandleForReading.readDataToEndOfFile()
-            let outputStr = String(data: data, encoding: .utf8) ?? ""
-
-            let version = outputStr
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .components(separatedBy: .whitespacesAndNewlines)
-                .dropFirst()
-                .first?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
+        Task {
+            let version = await Task.detached(priority: .utility) {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: path)
+                process.arguments = ["--version"]
+                let output = Pipe()
+                process.standardOutput = output
+                process.standardError = output
+                do {
+                    try process.run()
+                    let data = output.fileHandleForReading.readDataToEndOfFile()
+                    process.waitUntilExit()
+                    let outputStr = String(data: data, encoding: .utf8) ?? ""
+                    return outputStr
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .components(separatedBy: .whitespacesAndNewlines)
+                        .dropFirst()
+                        .first?
+                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                } catch {
+                    return ""
+                }
+            }.value
             easytierVersion = version.isEmpty ? "未知" : version
-        } catch {
-            easytierVersion = "未知"
         }
     }
 
@@ -430,6 +425,21 @@ struct SettingsView: View {
         checkUpdateTask?.resume()
     }
 
+    private func toggleRow(title: String, isOn: Binding<Bool>) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 12))
+            Spacer()
+            Toggle("", isOn: isOn)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .scaleEffect(0.8)
+                .fixedSize()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
     private func downloadUpdate() {
         isDownloading = true
         downloadError = nil
@@ -444,22 +454,23 @@ struct SettingsView: View {
 
         Task {
             do {
-                let (data, _) = try await URLSession.shared.data(from: url)
-
                 let tempDir = FileManager.default.temporaryDirectory
                     .appendingPathComponent("easytier-update-\(UUID().uuidString)")
                 defer { try? FileManager.default.removeItem(at: tempDir) }
 
                 try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
+                let (tempFileURL, _) = try await URLSession.shared.download(from: url)
                 let zipPath = tempDir.appendingPathComponent("easytier.zip")
-                try data.write(to: zipPath)
+                try FileManager.default.moveItem(at: tempFileURL, to: zipPath)
 
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-                process.arguments = ["-o", zipPath.path, "-d", tempDir.path]
-                try process.run()
-                process.waitUntilExit()
+                try await Task.detached {
+                    let process = Process()
+                    process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+                    process.arguments = ["-o", zipPath.path, "-d", tempDir.path]
+                    try process.run()
+                    process.waitUntilExit()
+                }.value
 
                 let extractedDir = tempDir.appendingPathComponent("easytier-macos-\(arch)")
                 let helpersURL = URL(fileURLWithPath: helpersPath)

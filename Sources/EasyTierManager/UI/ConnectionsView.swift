@@ -537,7 +537,8 @@ struct ConnectionsView: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(copyValue, forType: .string)
                 copiedIPv4 = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
                     copiedIPv4 = false
                 }
             }) {

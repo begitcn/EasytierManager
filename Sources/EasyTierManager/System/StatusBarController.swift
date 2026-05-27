@@ -2,7 +2,7 @@ import AppKit
 import Combine
 
 @MainActor
-class StatusBarController {
+class StatusBarController: NSObject {
     private let statusItem: NSStatusItem
     private let menu = NSMenu()
     private var cancellables = Set<AnyCancellable>()
@@ -11,8 +11,8 @@ class StatusBarController {
 
     init(mainWindowController: MainWindowController) {
         self.mainWindowController = mainWindowController
-
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        super.init()
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "network", accessibilityDescription: "EasyTier")
             button.action = #selector(showMenu)
