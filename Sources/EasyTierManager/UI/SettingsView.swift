@@ -4,6 +4,8 @@ struct SettingsView: View {
     @EnvironmentObject var easyTierService: EasyTierService
     @EnvironmentObject var appSettings: AppSettings
 
+    @StateObject private var appUpdateService = UpdateService.shared
+
     private static let updateCheckInterval: TimeInterval = 600
 
     @State private var isCheckingUpdate = false
@@ -238,10 +240,91 @@ struct SettingsView: View {
                                 .frame(width: 140, alignment: .leading)
                             Text(appVersion)
                                 .font(.system(.body, design: .monospaced))
+
+                            if appUpdateService.hasChecked && !appUpdateService.updateAvailable && !appUpdateService.isDownloading {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .font(.caption)
+                                Text("已是最新版本")
+                                    .foregroundColor(.green)
+                                    .font(.caption)
+                            }
+
                             Spacer()
+
+                            Button(action: {
+                                Task {
+                                    await appUpdateService.checkForUpdates()
+                                }
+                            }) {
+                                if appUpdateService.isChecking {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                        .frame(width: 16, height: 16)
+                                } else {
+                                    Text("检查更新")
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundColor(.accentColor)
+                            .disabled(appUpdateService.isChecking || appUpdateService.isDownloading)
                         }
                         .padding()
                         .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+
+                        if appUpdateService.isDownloading {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                        .frame(width: 16, height: 16)
+                                    Text("正在下载并自动安装应用更新...")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Text("\(Int(appUpdateService.downloadProgress * 100))%")
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                }
+                                ProgressView(value: appUpdateService.downloadProgress, total: 1.0)
+                                    .progressViewStyle(.linear)
+                            }
+                            .padding()
+                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                        }
+
+                        if let error = appUpdateService.error {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.red)
+                                Text(error)
+                                    .foregroundColor(.red)
+                                    .font(.caption)
+                                Spacer()
+                            }
+                            .padding()
+                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                        }
+
+                        if appUpdateService.updateAvailable && !appUpdateService.isDownloading {
+                            HStack {
+                                Image(systemName: "arrow.down.circle.fill")
+                                    .foregroundColor(.blue)
+                                Text("最新版本 \(appUpdateService.latestVersion) 可用")
+                                    .foregroundColor(.blue)
+                                    .font(.system(size: 12, weight: .semibold))
+                                Spacer()
+                                Button("下载并更新") {
+                                    Task {
+                                        await appUpdateService.downloadAndInstall()
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                            }
+                            .padding()
+                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                        }
 
                         HStack {
                             Text("GitHub")
