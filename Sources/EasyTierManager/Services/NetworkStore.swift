@@ -5,6 +5,7 @@ class NetworkStore: ObservableObject {
     static let shared = NetworkStore()
 
     @Published var networks: [VirtualNetwork] = []
+    @Published private(set) var configCache: [UUID: EasyTierConfig] = [:]
 
     private let saveURL: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -13,25 +14,28 @@ class NetworkStore: ObservableObject {
         return dir.appendingPathComponent("networks.json")
     }()
 
+    private var saveTask: Task<Void, Never>?
+
     private init() {
         load()
     }
 
     func addNetwork(_ network: VirtualNetwork) {
         networks.append(network)
-        save()
+        scheduleSave()
     }
 
     func updateNetwork(_ network: VirtualNetwork) {
         if let index = networks.firstIndex(where: { $0.id == network.id }) {
             networks[index] = network
-            save()
+            scheduleSave()
         }
     }
 
     func removeNetwork(id: UUID) {
         networks.removeAll { $0.id == id }
-        save()
+        configCache.removeValue(forKey: id)
+        scheduleSave()
     }
 
     func updateStatus(id: UUID, status: VirtualNetwork.ConnectionStatus) {
@@ -40,9 +44,31 @@ class NetworkStore: ObservableObject {
         }
     }
 
-    func save() {
+    func cacheConfig(_ config: EasyTierConfig, for id: UUID) {
+        configCache[id] = config
+    }
+
+    func invalidateConfig(for id: UUID) {
+        configCache.removeValue(forKey: id)
+    }
+
+    private func scheduleSave() {
+        saveTask?.cancel()
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard let self, !Task.isCancelled else { return }
+            performSave()
+        }
+    }
+
+    private func performSave() {
         guard let data = try? JSONEncoder().encode(networks) else { return }
         try? data.write(to: saveURL, options: .atomic)
+    }
+
+    func saveImmediately() {
+        saveTask?.cancel()
+        performSave()
     }
 
     private func load() {

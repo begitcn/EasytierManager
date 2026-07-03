@@ -114,21 +114,25 @@ class UpdateService: ObservableObject {
             let config = URLSessionConfiguration.default
             let delegateQueue = OperationQueue()
             delegateQueue.maxConcurrentOperationCount = 1
-            
-            let session = URLSession(configuration: config, delegate: DownloadProgressDelegate(
+
+            var session: URLSession!
+            let delegate = DownloadProgressDelegate(
                 onProgress: { [weak self] progress in
                     Task { @MainActor in
                         self?.downloadProgress = progress
                     }
                 },
                 onComplete: { fileURL in
+                    session.invalidateAndCancel()
                     continuation.resume(returning: fileURL)
                 },
                 onError: { err in
+                    session.invalidateAndCancel()
                     continuation.resume(throwing: err)
                 }
-            ), delegateQueue: delegateQueue)
-            
+            )
+            session = URLSession(configuration: config, delegate: delegate, delegateQueue: delegateQueue)
+
             let task = session.downloadTask(with: url)
             task.resume()
         }

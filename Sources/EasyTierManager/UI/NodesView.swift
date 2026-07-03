@@ -90,6 +90,7 @@ struct NodesView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isLoadingNodes)
+                .keyboardShortcut("r", modifiers: .command)
             }
             .padding(8)
             .border(width: 1, edges: [.bottom], color: NSColor.border.color)
@@ -188,7 +189,10 @@ struct NodesView: View {
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 30_000_000_000)
                     guard !Task.isCancelled else { break }
-                    refreshNodes()
+                    // Skip refresh when app is not active
+                    if easyTierService.isAppActive {
+                        refreshNodes()
+                    }
                 }
             }
         }
@@ -210,6 +214,7 @@ struct NodesView: View {
         guard !connectedNetworks.isEmpty else {
             nodes = []
             nodesErrorMessage = nil
+            easyTierService.updatePeerCache([])
             return
         }
 
@@ -217,10 +222,13 @@ struct NodesView: View {
         nodesErrorMessage = nil
         Task {
             do {
-                nodes = try await easyTierService.getPeerList(connectedNetworks: connectedNetworks)
+                let result = try await easyTierService.getPeerList(connectedNetworks: connectedNetworks)
+                nodes = result
+                easyTierService.updatePeerCache(result)
             } catch {
                 nodes = []
                 nodesErrorMessage = error.localizedDescription
+                easyTierService.updatePeerCache([])
                 if let easyTierError = error as? EasyTierError,
                    case .coreNotRunning = easyTierError {
                     for network in connectedNetworks {

@@ -46,7 +46,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let termSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: signalQueue)
         termSource.setEventHandler {
-            Self.handleTerminationSignal()
+            Task {
+                await Self.handleTerminationSignal()
+            }
         }
         termSource.activate()
         signal(SIGTERM, SIG_IGN)
@@ -54,7 +56,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let intSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: signalQueue)
         intSource.setEventHandler {
-            Self.handleTerminationSignal()
+            Task {
+                await Self.handleTerminationSignal()
+            }
         }
         intSource.activate()
         signal(SIGINT, SIG_IGN)
@@ -91,16 +95,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private static func handleTerminationSignal() {
-        let group = DispatchGroup()
-        group.enter()
-        DispatchQueue.main.async {
-            EasyTierService.shared.forceStopAll {
-                EasyTierHelperManager.shared.disconnect()
-                group.leave()
-            }
-        }
-        _ = group.wait(timeout: .now() + 8.0)
+    private static func handleTerminationSignal() async {
+        await EasyTierService.shared.forceStopAllAsync()
+        await EasyTierHelperManager.shared.disconnect()
         exit(0)
     }
 
@@ -135,7 +132,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     func applicationDidBecomeActive(_: Notification) {
+        easyTierService.isAppActive = true
         mainWindowController.showWindow(nil)
+    }
+
+    @MainActor
+    func applicationDidResignActive(_: Notification) {
+        easyTierService.isAppActive = false
     }
 
     @MainActor

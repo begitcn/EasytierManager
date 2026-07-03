@@ -41,333 +41,10 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                SettingsSection(title: "特权助手", trailing:
-                    Button {
-                        showHelperInfo = true
-                    } label: {
-                        Image(systemName: "questionmark.circle.fill")
-                            .font(.caption)
-                            .opacity(0.5)
-                    }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showHelperInfo) {
-                        Text("特权助手需要 root 权限来运行 easytier-core，点击\"安装助手\"并输入密码")
-                            .font(.caption)
-                            .padding(12)
-                            .frame(width: 260)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                ) {
-                    VStack(spacing: 0) {
-                        HStack {
-                            Text("助手状态")
-                                .opacity(0.6)
-                                .frame(width: 140, alignment: .leading)
-
-                            if helperManager.isHelperConnected {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                Text("已连接")
-                            } else {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.red)
-                                Text("未连接")
-                            }
-
-                            Spacer()
-
-                            if isInstallingHelper {
-                                ProgressView()
-                                    .scaleEffect(0.7)
-                                    .frame(width: 16, height: 16)
-                            } else {
-                                Button("安装助手") {
-                                    installHelper()
-                                }
-                                .buttonStyle(.plain)
-                                .foregroundColor(.accentColor)
-                                .disabled(isInstallingHelper)
-                            }
-                        }
-                        .padding()
-                        .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-
-                        if let error = helperError {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.orange)
-                                Text(error)
-                                    .font(.caption)
-                                    .foregroundColor(.orange)
-                                Spacer()
-                            }
-                            .padding()
-                        }
-                    }
-                }
-
-                SettingsSection(title: "EasyTier") {
-                    VStack(spacing: 0) {
-                        HStack {
-                            Text("EasyTier 版本")
-                                .opacity(0.6)
-                                .frame(width: 140, alignment: .leading)
-
-                            Text(easytierVersion.isEmpty ? "检测中..." : easytierVersion)
-                                .font(.system(.body, design: .monospaced))
-
-                            if !easytierVersion.isEmpty && !updateAvailable && !isDownloading {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                    .font(.caption)
-                                Text("已是最新版本")
-                                    .foregroundColor(.green)
-                                    .font(.caption)
-                            }
-
-                            Spacer()
-
-                            Button(action: checkForUpdates) {
-                                if isCheckingUpdate {
-                                    ProgressView()
-                                        .scaleEffect(0.7)
-                                        .frame(width: 16, height: 16)
-                                } else {
-                                    Text("检查更新")
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundColor(.accentColor)
-                            .disabled(isCheckingUpdate || isDownloading)
-                        }
-                        .padding()
-                        .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-
-                        if isDownloading {
-                            HStack {
-                                ProgressView()
-                                    .scaleEffect(0.7)
-                                    .frame(width: 16, height: 16)
-                                Text("正在下载更新...")
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                            }
-                            .padding()
-                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-                        }
-
-                        if let error = downloadError {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.red)
-                                Text(error)
-                                    .foregroundColor(.red)
-                                    .font(.caption)
-                                Spacer()
-                            }
-                            .padding()
-                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-                        }
-
-                        if updateAvailable && !isDownloading {
-                            HStack {
-                                Image(systemName: "arrow.down.circle.fill")
-                                    .foregroundColor(.blue)
-                                Text("版本 \(latestVersion) 可用")
-                                    .foregroundColor(.blue)
-                                Spacer()
-                                Button("下载并更新") {
-                                    downloadUpdate()
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
-                            }
-                            .padding()
-                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-                        }
-
-                    }
-                }
-
-                SettingsSection(title: "系统") {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 0) {
-                        toggleRow(title: "开机启动", isOn: Binding(
-                            get: { appSettings.isLaunchAtLogin },
-                            set: { appSettings.setLaunchAtLogin($0) }
-                        ))
-                        .border(width: 1, edges: [.bottom, .trailing], color: NSColor.border2.color)
-
-                        toggleRow(title: "显示系统托盘", isOn: Binding(
-                            get: { appSettings.showMenuBarIcon },
-                            set: { appSettings.setMenuBarIcon($0) }
-                        ))
-                        .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-
-                        toggleRow(title: "显示程序坞图标", isOn: Binding(
-                            get: { appSettings.showDockIcon },
-                            set: { appSettings.setDockIcon($0) }
-                        ))
-                        .border(width: 1, edges: [.bottom, .trailing], color: NSColor.border2.color)
-
-                        toggleRow(title: "启动自动连接", isOn: Binding(
-                            get: { appSettings.autoConnectOnLaunch },
-                            set: { appSettings.setAutoConnectOnLaunch($0) }
-                        ))
-                        .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-                    }
-
-                    if let warning = appSettings.toggleWarning {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.red)
-                                .font(.caption)
-                            Text(warning)
-                                .foregroundColor(.red)
-                                .font(.caption)
-                            Spacer()
-                        }
-                        .padding(.horizontal)
-                        .padding(.vertical, 8)
-                        .transition(.opacity)
-                    }
-                }
-
-                SettingsSection(title: "关于") {
-                    VStack(spacing: 0) {
-                        HStack {
-                            Text("应用版本")
-                                .opacity(0.6)
-                                .frame(width: 140, alignment: .leading)
-                            Text(appVersion)
-                                .font(.system(.body, design: .monospaced))
-
-                            if appUpdateService.hasChecked && !appUpdateService.updateAvailable && !appUpdateService.isDownloading {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                    .font(.caption)
-                                Text("已是最新版本")
-                                    .foregroundColor(.green)
-                                    .font(.caption)
-                            }
-
-                            Spacer()
-
-                            Button(action: {
-                                Task {
-                                    await appUpdateService.checkForUpdates()
-                                }
-                            }) {
-                                if appUpdateService.isChecking {
-                                    ProgressView()
-                                        .scaleEffect(0.7)
-                                        .frame(width: 16, height: 16)
-                                } else {
-                                    Text("检查更新")
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundColor(.accentColor)
-                            .disabled(appUpdateService.isChecking || appUpdateService.isDownloading)
-                        }
-                        .padding()
-                        .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-
-                        if appUpdateService.isDownloading {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    ProgressView()
-                                        .scaleEffect(0.7)
-                                        .frame(width: 16, height: 16)
-                                    Text("正在下载并自动安装应用更新...")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.secondary)
-                                    Spacer()
-                                    Text("\(Int(appUpdateService.downloadProgress * 100))%")
-                                        .font(.system(.caption, design: .monospaced))
-                                        .foregroundColor(.secondary)
-                                }
-                                ProgressView(value: appUpdateService.downloadProgress, total: 1.0)
-                                    .progressViewStyle(.linear)
-                            }
-                            .padding()
-                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-                        }
-
-                        if let error = appUpdateService.error {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.red)
-                                Text(error)
-                                    .foregroundColor(.red)
-                                    .font(.caption)
-                                Spacer()
-                            }
-                            .padding()
-                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-                        }
-
-                        if appUpdateService.updateAvailable && !appUpdateService.isDownloading {
-                            HStack {
-                                Image(systemName: "arrow.down.circle.fill")
-                                    .foregroundColor(.blue)
-                                Text("最新版本 \(appUpdateService.latestVersion) 可用")
-                                    .foregroundColor(.blue)
-                                    .font(.system(size: 12, weight: .semibold))
-                                Spacer()
-                                Button("下载并更新") {
-                                    Task {
-                                        await appUpdateService.downloadAndInstall()
-                                    }
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
-                            }
-                            .padding()
-                            .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-                        }
-
-                        HStack {
-                            Text("GitHub")
-                                .opacity(0.6)
-                                .frame(width: 140, alignment: .leading)
-                            Text("github.com/begitcn/EasytierManager")
-                                .foregroundColor(.accentColor)
-                            Spacer()
-                            Button(action: {
-                                if let url = URL(string: "https://github.com/begitcn/EasytierManager") {
-                                    NSWorkspace.shared.open(url)
-                                }
-                            }) {
-                                Image(systemName: "arrow.up.forward.square")
-                                    .font(.system(size: 12))
-                            }
-                            .buttonStyle(.plain)
-                            .opacity(0.6)
-                        }
-                        .padding()
-                        .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-
-                        HStack {
-                            Text("报告问题")
-                                .opacity(0.6)
-                                .frame(width: 140, alignment: .leading)
-                            Text("github.com/begitcn/EasytierManager/issues")
-                                .foregroundColor(.accentColor)
-                            Spacer()
-                            Button(action: {
-                                if let url = URL(string: "https://github.com/begitcn/EasytierManager/issues") {
-                                    NSWorkspace.shared.open(url)
-                                }
-                            }) {
-                                Image(systemName: "arrow.up.forward.square")
-                                    .font(.system(size: 12))
-                            }
-                            .buttonStyle(.plain)
-                            .opacity(0.6)
-                        }
-                        .padding()
-                    }
-                }
+                privilegeHelperSection
+                easyTierSection
+                systemSection
+                aboutSection
 
                 HStack {
                     Spacer()
@@ -396,6 +73,204 @@ struct SettingsView: View {
                         appSettings.toggleWarning = nil
                     }
                 }
+            }
+        }
+    }
+
+    private var privilegeHelperSection: some View {
+        SettingsSection(title: "特权助手", trailing:
+            Button {
+                showHelperInfo = true
+            } label: {
+                Image(systemName: "questionmark.circle.fill")
+                    .font(.caption)
+                    .opacity(0.5)
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showHelperInfo) {
+                Text("特权助手需要 root 权限来运行 easytier-core，点击\"安装助手\"并输入密码")
+                    .font(.caption)
+                    .padding(12)
+                    .frame(width: 260)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        ) {
+            VStack(spacing: 0) {
+                HelperStatusRow(
+                    isConnected: helperManager.isHelperConnected,
+                    isInstalling: isInstallingHelper,
+                    onInstall: installHelper
+                )
+                .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+
+                if let error = helperError {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                        Spacer()
+                    }
+                    .padding()
+                }
+            }
+        }
+    }
+
+    private var easyTierSection: some View {
+        SettingsSection(title: "EasyTier") {
+            VStack(spacing: 0) {
+                EasyTierVersionRow(
+                    version: easytierVersion,
+                    isChecking: isCheckingUpdate,
+                    isDownloading: isDownloading,
+                    updateAvailable: updateAvailable,
+                    onCheckUpdate: checkForUpdates
+                )
+                .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+
+                if isDownloading {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                            .frame(width: 16, height: 16)
+                        Text("正在下载更新...")
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .padding()
+                    .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                }
+
+                if let error = downloadError {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                        Text(error)
+                            .foregroundColor(.red)
+                            .font(.caption)
+                        Spacer()
+                    }
+                    .padding()
+                    .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                }
+
+                if updateAvailable && !isDownloading {
+                    HStack {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .foregroundColor(.blue)
+                        Text("版本 \(latestVersion) 可用")
+                            .foregroundColor(.blue)
+                        Spacer()
+                        Button("下载并更新") {
+                            downloadUpdate()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+                    .padding()
+                    .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                }
+            }
+        }
+    }
+
+    private var systemSection: some View {
+        SettingsSection(title: "系统") {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 0) {
+                toggleRow(title: "开机启动", isOn: Binding(
+                    get: { appSettings.isLaunchAtLogin },
+                    set: { appSettings.setLaunchAtLogin($0) }
+                ))
+                .border(width: 1, edges: [.bottom, .trailing], color: NSColor.border2.color)
+
+                toggleRow(title: "显示系统托盘", isOn: Binding(
+                    get: { appSettings.showMenuBarIcon },
+                    set: { appSettings.setMenuBarIcon($0) }
+                ))
+                .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+
+                toggleRow(title: "显示程序坞图标", isOn: Binding(
+                    get: { appSettings.showDockIcon },
+                    set: { appSettings.setDockIcon($0) }
+                ))
+                .border(width: 1, edges: [.bottom, .trailing], color: NSColor.border2.color)
+
+                toggleRow(title: "启动自动连接", isOn: Binding(
+                    get: { appSettings.autoConnectOnLaunch },
+                    set: { appSettings.setAutoConnectOnLaunch($0) }
+                ))
+                .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+            }
+
+            if let warning = appSettings.toggleWarning {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.red)
+                        .font(.caption)
+                    Text(warning)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .transition(.opacity)
+            }
+        }
+    }
+
+    private var aboutSection: some View {
+        SettingsSection(title: "关于") {
+            VStack(spacing: 0) {
+                AppUpdateRow(
+                    appVersion: appVersion,
+                    updateService: appUpdateService,
+                    onCheckUpdate: {
+                        Task { await appUpdateService.checkForUpdates() }
+                    }
+                )
+                .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+
+                if appUpdateService.isDownloading {
+                    DownloadProgressRow(progress: appUpdateService.downloadProgress)
+                        .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                }
+
+                if let error = appUpdateService.error {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                        Text(error)
+                            .foregroundColor(.red)
+                            .font(.caption)
+                        Spacer()
+                    }
+                    .padding()
+                    .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                }
+
+                if appUpdateService.updateAvailable && !appUpdateService.isDownloading {
+                    UpdateAvailableRow(
+                        latestVersion: appUpdateService.latestVersion,
+                        onDownload: { Task { await appUpdateService.downloadAndInstall() } }
+                    )
+                    .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+                }
+
+                LinkRow(
+                    title: "GitHub",
+                    value: "github.com/begitcn/EasytierManager",
+                    url: "https://github.com/begitcn/EasytierManager"
+                )
+                .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
+
+                LinkRow(
+                    title: "报告问题",
+                    value: "github.com/begitcn/EasytierManager/issues",
+                    url: "https://github.com/begitcn/EasytierManager/issues"
+                )
             }
         }
     }
@@ -435,28 +310,7 @@ struct SettingsView: View {
         }
 
         Task {
-            let version = await Task.detached(priority: .utility) {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: path)
-                process.arguments = ["--version"]
-                let output = Pipe()
-                process.standardOutput = output
-                process.standardError = output
-                do {
-                    try process.run()
-                    let data = output.fileHandleForReading.readDataToEndOfFile()
-                    process.waitUntilExit()
-                    let outputStr = String(data: data, encoding: .utf8) ?? ""
-                    return outputStr
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                        .components(separatedBy: .whitespacesAndNewlines)
-                        .dropFirst()
-                        .first?
-                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                } catch {
-                    return ""
-                }
-            }.value
+            let version = await easyTierService.getCoreVersion()
             easytierVersion = version.isEmpty ? "未知" : version
         }
     }
@@ -575,6 +429,7 @@ struct SettingsView: View {
                     [.posixPermissions: 0o755], ofItemAtPath: cliDst.path)
 
                 await MainActor.run {
+                    easyTierService.clearCoreVersionCache()
                     easytierVersion = "v\(version)"
                     updateAvailable = false
                     isDownloading = false
@@ -587,5 +442,201 @@ struct SettingsView: View {
             }
         }
     }
+}
 
+// MARK: - Extracted Sub-views
+
+private struct HelperStatusRow: View {
+    let isConnected: Bool
+    let isInstalling: Bool
+    let onInstall: () -> Void
+
+    var body: some View {
+        HStack {
+            Text("助手状态")
+                .opacity(0.6)
+                .frame(width: 140, alignment: .leading)
+
+            if isConnected {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+                Text("已连接")
+            } else {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.red)
+                Text("未连接")
+            }
+
+            Spacer()
+
+            if isInstalling {
+                ProgressView()
+                    .scaleEffect(0.7)
+                    .frame(width: 16, height: 16)
+            } else {
+                Button("安装助手", action: onInstall)
+                    .buttonStyle(.plain)
+                    .foregroundColor(.accentColor)
+                    .disabled(isInstalling)
+            }
+        }
+        .padding()
+    }
+}
+
+private struct EasyTierVersionRow: View {
+    let version: String
+    let isChecking: Bool
+    let isDownloading: Bool
+    let updateAvailable: Bool
+    let onCheckUpdate: () -> Void
+
+    var body: some View {
+        HStack {
+            Text("EasyTier 版本")
+                .opacity(0.6)
+                .frame(width: 140, alignment: .leading)
+
+            Text(version.isEmpty ? "检测中..." : version)
+                .font(.system(.body, design: .monospaced))
+
+            if !version.isEmpty && !updateAvailable && !isDownloading {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+                    .font(.caption)
+                Text("已是最新版本")
+                    .foregroundColor(.green)
+                    .font(.caption)
+            }
+
+            Spacer()
+
+            Button(action: onCheckUpdate) {
+                if isChecking {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .frame(width: 16, height: 16)
+                } else {
+                    Text("检查更新")
+                }
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.accentColor)
+            .disabled(isChecking || isDownloading)
+        }
+        .padding()
+    }
+}
+
+private struct AppUpdateRow: View {
+    let appVersion: String
+    let updateService: UpdateService
+    let onCheckUpdate: () -> Void
+
+    var body: some View {
+        HStack {
+            Text("应用版本")
+                .opacity(0.6)
+                .frame(width: 140, alignment: .leading)
+            Text(appVersion)
+                .font(.system(.body, design: .monospaced))
+
+            if updateService.hasChecked && !updateService.updateAvailable && !updateService.isDownloading {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+                    .font(.caption)
+                Text("已是最新版本")
+                    .foregroundColor(.green)
+                    .font(.caption)
+            }
+
+            Spacer()
+
+            Button(action: onCheckUpdate) {
+                if updateService.isChecking {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .frame(width: 16, height: 16)
+                } else {
+                    Text("检查更新")
+                }
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.accentColor)
+            .disabled(updateService.isChecking || updateService.isDownloading)
+        }
+        .padding()
+    }
+}
+
+private struct DownloadProgressRow: View {
+    let progress: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                ProgressView()
+                    .scaleEffect(0.7)
+                    .frame(width: 16, height: 16)
+                Text("正在下载并自动安装应用更新...")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(Int(progress * 100))%")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+            ProgressView(value: progress, total: 1.0)
+                .progressViewStyle(.linear)
+        }
+        .padding()
+    }
+}
+
+private struct UpdateAvailableRow: View {
+    let latestVersion: String
+    let onDownload: () -> Void
+
+    var body: some View {
+        HStack {
+            Image(systemName: "arrow.down.circle.fill")
+                .foregroundColor(.blue)
+            Text("最新版本 \(latestVersion) 可用")
+                .foregroundColor(.blue)
+                .font(.system(size: 12, weight: .semibold))
+            Spacer()
+            Button("下载并更新", action: onDownload)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+        }
+        .padding()
+    }
+}
+
+private struct LinkRow: View {
+    let title: String
+    let value: String
+    let url: String
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .opacity(0.6)
+                .frame(width: 140, alignment: .leading)
+            Text(value)
+                .foregroundColor(.accentColor)
+            Spacer()
+            Button(action: {
+                if let url = URL(string: url) {
+                    NSWorkspace.shared.open(url)
+                }
+            }) {
+                Image(systemName: "arrow.up.forward.square")
+                    .font(.system(size: 12))
+            }
+            .buttonStyle(.plain)
+            .opacity(0.6)
+        }
+        .padding()
+    }
 }

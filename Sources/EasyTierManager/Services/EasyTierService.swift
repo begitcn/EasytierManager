@@ -23,6 +23,19 @@ class EasyTierService: ObservableObject {
     private var sleepConfigs: [String] = []
     private var isSleeping = false
 
+    @Published private(set) var peerCache: [UUID: [NetworkNode]] = [:]
+    private var cachedCoreVersion: String?
+    var isAppActive = true
+
+    func updatePeerCache(_ nodes: [NetworkNode]) {
+        // Group nodes by networkId for the cache
+        var cache: [UUID: [NetworkNode]] = [:]
+        for node in nodes {
+            cache[node.networkId, default: []].append(node)
+        }
+        peerCache = cache
+    }
+
     private init() {}
 
     private func getProxy() async throws -> EasyTierHelperProtocol {
@@ -133,8 +146,9 @@ class EasyTierService: ObservableObject {
     }
 
     func getCoreVersion() async -> String {
+        if let cached = cachedCoreVersion { return cached }
         let path = corePath
-        return await Task.detached(priority: .utility) {
+        let version = await Task.detached(priority: .utility) {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: path)
             process.arguments = ["--version"]
@@ -156,6 +170,12 @@ class EasyTierService: ObservableObject {
                 return ""
             }
         }.value
+        cachedCoreVersion = version
+        return version
+    }
+
+    func clearCoreVersionCache() {
+        cachedCoreVersion = nil
     }
 
     func restartActiveNetworks() async {
@@ -301,6 +321,14 @@ class EasyTierService: ObservableObject {
         }
     }
 
+    func forceStopAllAsync() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            forceStopAll {
+                continuation.resume()
+            }
+        }
+    }
+
     private func startHealthCheck() {
         stopHealthCheck()
         let intervalNs = UInt64(healthCheckInterval * 1_000_000_000)
@@ -319,7 +347,7 @@ class EasyTierService: ObservableObject {
     }
 
     private func performHealthCheck() async {
-        guard !activeConfigs.isEmpty, let _ = coreProcessPID else { return }
+        guard !activeConfigs.isEmpty, let _ = coreProcessPID, isAppActive, !isSleeping else { return }
         let alive = await isCoreAlive()
         if alive {
             consecutiveFailures = 0

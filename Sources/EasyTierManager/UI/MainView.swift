@@ -49,6 +49,7 @@ struct MainView: View {
                                         isActive: navigationVM.selection == nav
                                     )
                                 )
+                                .keyboardShortcut(nav.shortcutKey, modifiers: .command)
                             }
                         }
                     }
@@ -125,6 +126,17 @@ extension NavigationVM.Nav {
             return "节点"
         case .settings:
             return "设置"
+        }
+    }
+
+    var shortcutKey: KeyEquivalent {
+        switch self {
+        case .connections:
+            return "1"
+        case .nodes:
+            return "2"
+        case .settings:
+            return "3"
         }
     }
 
