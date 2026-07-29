@@ -34,6 +34,8 @@ targets:
       path: Resources/Info.plist
       properties:
         CFBundleIconName: AppIcon
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
     entitlements:
       path: Resources/Signing.entitlements
     preBuildScripts:
