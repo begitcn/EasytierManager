@@ -26,6 +26,8 @@ class EasyTierService: ObservableObject {
     @Published private(set) var peerCache: [UUID: [NetworkNode]] = [:]
     private var cachedCoreVersion: String?
     var isAppActive = true
+    /// 主窗口是否可见。不可见时停止一切 UI 轮询，仅保留核心健康检查。
+    var isWindowVisible = true
 
     func updatePeerCache(_ nodes: [NetworkNode]) {
         // Group nodes by networkId for the cache
@@ -33,6 +35,8 @@ class EasyTierService: ObservableObject {
         for node in nodes {
             cache[node.networkId, default: []].append(node)
         }
+        // 内容未变化时不触发 @Published 刷新，避免无效视图重建
+        guard cache != peerCache else { return }
         peerCache = cache
     }
 
@@ -237,54 +241,25 @@ class EasyTierService: ObservableObject {
         let configsToRestore = !sleepConfigs.isEmpty ? sleepConfigs : activeConfigs
         guard !configsToRestore.isEmpty else { return }
 
-        for configPath in configsToRestore {
-            if let network = NetworkStore.shared.networks.first(where: { $0.configPath == configPath }) {
-                NetworkStore.shared.updateStatus(id: network.id, status: .connecting)
-            }
-        }
-
         activeConfigs = configsToRestore
+        sleepConfigs = []
 
+        // 唤醒后网络栈需要一点时间就绪；重连助手成功后统一走 restartActiveNetworks
         var success = false
         let maxRetries = 5
         for attempt in 1...maxRetries {
-            do {
-                if attempt > 1 {
-                    try await Task.sleep(nanoseconds: UInt64(attempt) * 1_000_000_000)
-                } else {
-                    try await Task.sleep(nanoseconds: 2_000_000_000)
-                }
+            let delay = attempt == 1 ? 2 : attempt
+            try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000_000)
 
-                await helperManager.installAndConnect()
-                guard helperManager.isHelperConnected else { continue }
+            await helperManager.installAndConnect()
+            guard helperManager.isHelperConnected else { continue }
 
-                let proxy = try await getProxy()
-                if let pid = coreProcessPID {
-                    try? await stopProcessSafely(pid: pid, proxy: proxy)
-                    coreProcessPID = nil
-                }
-
-                let newPid = try await launchCore(proxy: proxy)
-                coreProcessPID = newPid
-                consecutiveFailures = 0
-                startHealthCheck()
-
-                for configPath in configsToRestore {
-                    if let network = NetworkStore.shared.networks.first(where: { $0.configPath == configPath }) {
-                        NetworkStore.shared.updateStatus(id: network.id, status: .connected)
-                    }
-                }
-                success = true
-                break
-            } catch {
-                // Continue retry loop
-            }
+            await restartActiveNetworks()
+            success = coreProcessPID != nil
+            if success { break }
         }
 
-        sleepConfigs = []
-
         if !success {
-            coreProcessPID = nil
             for configPath in configsToRestore {
                 if let network = NetworkStore.shared.networks.first(where: { $0.configPath == configPath }) {
                     NetworkStore.shared.updateStatus(id: network.id, status: .error)
@@ -347,7 +322,8 @@ class EasyTierService: ObservableObject {
     }
 
     private func performHealthCheck() async {
-        guard !activeConfigs.isEmpty, let _ = coreProcessPID, isAppActive, !isSleeping else { return }
+        // 健康检查不依赖 App 是否在前台：常驻工具必须在后台也维持连接稳定
+        guard !activeConfigs.isEmpty, let _ = coreProcessPID, !isSleeping else { return }
         let alive = await isCoreAlive()
         if alive {
             consecutiveFailures = 0
@@ -366,6 +342,12 @@ class EasyTierService: ObservableObject {
         }
 
         coreProcessPID = nil
+
+        // 指数退避（5s → 10s → 20s → 40s，封顶 60s），避免核心反复崩溃时陷入高频重启循环
+        let backoff = min(5.0 * pow(2.0, Double(consecutiveFailures - 1)), 60.0)
+        try? await Task.sleep(nanoseconds: UInt64(backoff * 1_000_000_000))
+        guard !Task.isCancelled, !activeConfigs.isEmpty, !isSleeping else { return }
+
         do {
             let proxy = try await getProxy()
             let newPid = try await launchCore(proxy: proxy)
@@ -486,45 +468,81 @@ class EasyTierService: ObservableObject {
         }
     }
 
+    // MARK: - Peer 解析（Codable，比 JSONSerialization 更快、更省内存、类型安全）
+
+    private struct PeerInstanceDTO: Decodable {
+        let instance_name: String?
+        let result: [PeerNodeDTO]?
+
+        // 部分版本输出为扁平节点结构
+        let hostname: String?
+        let peer_id: String?
+        let ipv4: String?
+        let virtual_ipv6: String?
+        let ipv6: String?
+        let lat_ms: String?
+        let latency_ms: String?
+        let cost: String?
+    }
+
+    private struct PeerNodeDTO: Decodable {
+        let hostname: String?
+        let peer_id: String?
+        let ipv4: String?
+        let virtual_ipv6: String?
+        let ipv6: String?
+        let lat_ms: String?
+        let latency_ms: String?
+        let cost: String?
+    }
+
     private func parsePeerJSON(_ json: String, networkMap: [String: UUID] = [:]) -> [NetworkNode] {
         guard let data = json.data(using: .utf8),
-              let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+              let entries = try? JSONDecoder().decode([PeerInstanceDTO].self, from: data)
         else { return parsePeerText(json) }
 
         let defaultNetworkId = networkMap.values.first ?? UUID()
 
-        return jsonArray.flatMap { element -> [NetworkNode] in
-            if let result = element["result"] as? [[String: Any]] {
-                let instanceName = element["instance_name"] as? String ?? ""
-                let networkId = networkMap[instanceName] ?? defaultNetworkId
-                return result.compactMap { parsePeerNode($0, networkId: networkId) }
+        return entries.flatMap { entry -> [NetworkNode] in
+            if let result = entry.result {
+                let networkId = entry.instance_name.flatMap { networkMap[$0] } ?? defaultNetworkId
+                return result.compactMap { dto in
+                    makeNode(
+                        name: dto.hostname ?? dto.peer_id,
+                        ipv4: dto.ipv4,
+                        ipv6: dto.virtual_ipv6 ?? dto.ipv6,
+                        latStr: dto.lat_ms ?? dto.latency_ms,
+                        cost: dto.cost,
+                        networkId: networkId
+                    )
+                }
             }
-            if let node = parsePeerNode(element, networkId: defaultNetworkId) {
+            if let node = makeNode(
+                name: entry.hostname ?? entry.peer_id,
+                ipv4: entry.ipv4,
+                ipv6: entry.virtual_ipv6 ?? entry.ipv6,
+                latStr: entry.lat_ms ?? entry.latency_ms,
+                cost: entry.cost,
+                networkId: defaultNetworkId
+            ) {
                 return [node]
             }
             return []
         }
     }
 
-    private func parsePeerNode(_ dict: [String: Any], networkId: UUID) -> NetworkNode? {
-        guard let name = dict["hostname"] as? String ?? dict["peer_id"] as? String,
-              let ipv4 = dict["ipv4"] as? String
-        else { return nil }
+    private func makeNode(name: String?, ipv4: String?, ipv6: String?, latStr: String?, cost: String?, networkId: UUID) -> NetworkNode? {
+        guard let name, let ipv4 else { return nil }
 
         let latency: Int? = {
-            if let latStr = dict["lat_ms"] as? String ?? dict["latency_ms"] as? String,
-               latStr != "-" {
-                return Int(Double(latStr) ?? 0)
-            }
-            return nil
+            guard let latStr, latStr != "-" else { return nil }
+            return Int(Double(latStr) ?? 0)
         }()
-
-        let cost = dict["cost"] as? String
 
         return NetworkNode(
             name: name,
             ipv4: ipv4,
-            ipv6: dict["virtual_ipv6"] as? String ?? dict["ipv6"] as? String,
+            ipv6: ipv6,
             status: .online,
             latency: latency,
             networkId: networkId,
@@ -534,13 +552,15 @@ class EasyTierService: ObservableObject {
     }
 
     private func parsePeerText(_ text: String) -> [NetworkNode] {
+        // 纯文本兜底解析（旧版 CLI 无 JSON 输出时）
+        let fallbackNetworkId = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
         let lines = text.components(separatedBy: .newlines).filter { !$0.isEmpty }
         guard lines.count > 1 else { return [] }
 
         return lines.dropFirst().compactMap { line -> NetworkNode? in
             let columns = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
             guard columns.count >= 2 else { return nil }
-            return NetworkNode(name: columns[0], ipv4: columns[1], status: .online, networkId: UUID())
+            return NetworkNode(name: columns[0], ipv4: columns[1], status: .online, networkId: fallbackNetworkId)
         }
     }
 

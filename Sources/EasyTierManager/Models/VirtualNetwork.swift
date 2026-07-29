@@ -1,6 +1,6 @@
 import Foundation
 
-struct VirtualNetwork: Identifiable, Codable {
+struct VirtualNetwork: Identifiable, Codable, Equatable {
     var id: UUID
     var name: String
     var configPath: String

@@ -103,6 +103,7 @@ struct ConnectionsView: View {
                         network: network,
                         connectingNetworkId: connectingNetworkId
                     )
+                    .equatable()
                     .tag(network.id)
                 }
                 .onDelete(perform: deleteNetworks)
@@ -202,7 +203,7 @@ struct ConnectionsView: View {
                 onDelete: { confirmDeleteNetwork(network) }
             )
         } else {
-            EmptySelectionView()
+            EmptySelectionView(onCreate: startCreating)
         }
     }
 
@@ -523,18 +524,21 @@ struct ConnectionsView: View {
 
 // MARK: - Extracted Sub-views
 
-private struct NetworkRowView: View {
+private struct NetworkRowView: View, Equatable {
     let network: VirtualNetwork
     let connectingNetworkId: UUID?
 
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.network == rhs.network && lhs.connectingNetworkId == rhs.connectingNetworkId
+    }
+
     var body: some View {
-        HStack {
-            Image(systemName: statusIcon(network.status))
-                .foregroundColor(statusColor(network.status))
-                .font(.system(size: 10))
+        HStack(spacing: Theme.Spacing.sm) {
+            StatusDot(status: network.status)
 
             Text(network.name)
                 .fontWeight(.medium)
+                .lineLimit(1)
 
             Spacer()
 
@@ -543,54 +547,40 @@ private struct NetworkRowView: View {
                     .scaleEffect(0.6)
                     .frame(width: 16, height: 16)
             } else {
-                Text(networkStatusText(network.status))
+                Text(network.status.text)
                     .font(.caption)
-                    .foregroundColor(statusColor(network.status))
+                    .foregroundStyle(network.status.color)
             }
         }
         .padding(.vertical, 4)
     }
-
-    private func statusIcon(_ status: VirtualNetwork.ConnectionStatus) -> String {
-        switch status {
-        case .connected: return "circle.fill"
-        case .connecting: return "circle.lefthalf.filled"
-        case .disconnected: return "circle"
-        case .error: return "xmark.circle"
-        }
-    }
-
-    private func statusColor(_ status: VirtualNetwork.ConnectionStatus) -> Color {
-        switch status {
-        case .connected: return .green
-        case .connecting: return .orange
-        case .disconnected: return .secondary
-        case .error: return .red
-        }
-    }
-
-    private func networkStatusText(_ status: VirtualNetwork.ConnectionStatus) -> String {
-        switch status {
-        case .connected: return "已连接"
-        case .connecting: return "连接中"
-        case .disconnected: return "未连接"
-        case .error: return "错误"
-        }
-    }
 }
 
 private struct EmptySelectionView: View {
+    let onCreate: () -> Void
+
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Theme.Spacing.lg) {
             Image(systemName: "network")
-                .font(.system(size: 48))
-                .opacity(0.3)
-            Text("选择一个网络")
-                .font(.headline)
-                .opacity(0.5)
-            Text("从列表中选择一个虚拟网络查看详情")
-                .font(.caption)
-                .opacity(0.3)
+                .font(.system(size: 40, weight: .light))
+                .foregroundStyle(.secondary)
+                .frame(width: 88, height: 88)
+                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: Theme.Radius.large))
+
+            VStack(spacing: Theme.Spacing.xs) {
+                Text("选择一个网络")
+                    .font(.headline)
+                Text("从左侧列表选择虚拟网络查看详情\n或创建一个新的网络")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Button(action: onCreate) {
+                Label("新建网络", systemImage: "plus")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.regular)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -606,6 +596,8 @@ private struct NetworkDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                headerCard
+
                 SettingsSection(title: "网络信息") {
                     VStack(spacing: 0) {
                         DetailRow(label: "名称", value: network.name)
@@ -645,16 +637,6 @@ private struct NetworkDetailView: View {
 
                 SettingsSection(title: "操作") {
                     VStack(spacing: 0) {
-                        Button(action: onToggle) {
-                            HStack {
-                                Image(systemName: network.status == .connected ? "stop.fill" : "play.fill")
-                                Text(network.status == .connected ? "断开" : "连接")
-                                Spacer()
-                            }
-                        }
-                        .buttonStyle(SectionButtonStyle())
-                        .border(width: 1, edges: [.bottom], color: NSColor.border2.color)
-
                         Button(action: onExport) {
                             HStack {
                                 Image(systemName: "square.and.arrow.up")
@@ -681,6 +663,42 @@ private struct NetworkDetailView: View {
             .padding()
         }
         .id(network.id)
+    }
+
+    /// 顶部状态卡片：大图标 + 状态徽章 + 主操作按钮
+    private var headerCard: some View {
+        HStack(spacing: Theme.Spacing.lg) {
+            Image(systemName: "network")
+                .font(.system(size: 24, weight: .medium))
+                .foregroundStyle(network.status.color)
+                .frame(width: 56, height: 56)
+                .background(network.status.color.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.Radius.large))
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                Text(network.name)
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(1)
+                StatusBadge(status: network.status)
+            }
+
+            Spacer()
+
+            Button(action: onToggle) {
+                Label(
+                    network.status == .connected ? "断开" : "连接",
+                    systemImage: network.status == .connected ? "stop.fill" : "play.fill"
+                )
+                .frame(minWidth: 72)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(network.status == .connected ? .red : .accentColor)
+            .disabled(network.status == .connecting)
+            .keyboardShortcut(.return, modifiers: .command)
+        }
+        .padding(Theme.Spacing.lg)
+        .background(.background, in: RoundedRectangle(cornerRadius: Theme.Radius.medium))
+        .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
     }
 }
 
@@ -803,29 +821,10 @@ private struct ColoredStatusRow: View {
             Text(label)
                 .opacity(0.6)
                 .frame(width: 100, alignment: .leading)
-            Text(networkStatusText(network.status))
-                .foregroundColor(statusColor(network.status))
+            StatusBadge(status: network.status)
             Spacer()
         }
         .padding()
-    }
-
-    private func statusColor(_ status: VirtualNetwork.ConnectionStatus) -> Color {
-        switch status {
-        case .connected: return .green
-        case .connecting: return .orange
-        case .disconnected: return .secondary
-        case .error: return .red
-        }
-    }
-
-    private func networkStatusText(_ status: VirtualNetwork.ConnectionStatus) -> String {
-        switch status {
-        case .connected: return "已连接"
-        case .connecting: return "连接中"
-        case .disconnected: return "未连接"
-        case .error: return "错误"
-        }
     }
 }
 

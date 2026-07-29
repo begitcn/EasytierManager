@@ -18,29 +18,26 @@ struct SettingsSection<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading) {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             if !title.isEmpty {
                 HStack {
                     Text(title)
-                        .opacity(0.8)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
                     if let trailing {
                         Spacer()
                         trailing
                     }
                 }
-                .padding(.horizontal)
+                .padding(.horizontal, Theme.Spacing.xs)
             }
 
             VStack(alignment: .leading, spacing: 0) {
                 content
             }
             .frame(maxWidth: .infinity)
-            .background(NSColor.background.color)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(NSColor.border2.color, lineWidth: 1)
-            )
+            .background(.background, in: RoundedRectangle(cornerRadius: Theme.Radius.medium))
+            .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
         }
     }
 }

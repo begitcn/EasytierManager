@@ -149,6 +149,7 @@ struct NodesView: View {
 
                         ForEach(filteredNodes) { node in
                             NodeRowView(node: node, onCopy: copyToClipboard)
+                                .equatable()
                         }
                     }
                 }
@@ -189,8 +190,8 @@ struct NodesView: View {
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 30_000_000_000)
                     guard !Task.isCancelled else { break }
-                    // Skip refresh when app is not active
-                    if easyTierService.isAppActive {
+                    // 窗口不可见或 App 在后台时完全停止轮询，常驻零额外开销
+                    if easyTierService.isAppActive, easyTierService.isWindowVisible {
                         refreshNodes()
                     }
                 }
@@ -199,6 +200,8 @@ struct NodesView: View {
         .onDisappear {
             autoRefreshTask?.cancel()
             autoRefreshTask = nil
+            refreshTask?.cancel()
+            refreshTask = nil
         }
         .onChange(of: connectedNetworks.count) { _ in
             if let selected = selectedNetworkId, !connectedNetworks.contains(where: { $0.id == selected }) {
@@ -210,6 +213,8 @@ struct NodesView: View {
         }
     }
 
+    @State private var refreshTask: Task<Void, Never>?
+
     private func refreshNodes() {
         guard !connectedNetworks.isEmpty else {
             nodes = []
@@ -218,14 +223,20 @@ struct NodesView: View {
             return
         }
 
+        // 刷新合流：上一次请求未完成时跳过，避免 CLI 进程堆积
+        guard refreshTask == nil else { return }
+
         isLoadingNodes = true
         nodesErrorMessage = nil
-        Task {
+        refreshTask = Task {
+            defer { refreshTask = nil }
             do {
                 let result = try await easyTierService.getPeerList(connectedNetworks: connectedNetworks)
+                guard !Task.isCancelled else { return }
                 nodes = result
                 easyTierService.updatePeerCache(result)
             } catch {
+                guard !Task.isCancelled else { return }
                 nodes = []
                 nodesErrorMessage = error.localizedDescription
                 easyTierService.updatePeerCache([])
@@ -256,25 +267,12 @@ struct NodesView: View {
     }
 }
 
-private struct NodeRowView: View {
+private struct NodeRowView: View, Equatable {
     let node: NetworkNode
     let onCopy: (String) -> Void
 
-    private func costBadge(_ cost: String?) -> some View {
-        let (text, color): (String, Color) = {
-            switch cost {
-            case "Local": return ("本地", Color.gray)
-            case "p2p": return ("P2P", Color.green)
-            default: return ("中继", Color.orange)
-            }
-        }()
-        return Text(text)
-            .font(.system(size: 10, weight: .medium))
-            .foregroundColor(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.node == rhs.node
     }
 
     var body: some View {
@@ -299,10 +297,12 @@ private struct NodeRowView: View {
             .frame(width: 170, alignment: .leading)
 
             Text(node.latency != nil ? "\(node.latency!)ms" : "-")
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(Theme.latencyColor(node.latency))
                 .frame(width: 80, alignment: .trailing)
                 .opacity(node.latency != nil ? 1 : 0.3)
 
-            costBadge(node.cost)
+            CostBadge(cost: node.cost)
                 .frame(width: 80, alignment: .center)
 
             Spacer()

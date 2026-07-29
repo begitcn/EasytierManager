@@ -25,13 +25,54 @@ class StatusBarController: NSObject {
             }
             .store(in: &cancellables)
 
+        // 菜单栏图标随连接状态切换：已连接 / 连接中 / 未连接
+        NetworkStore.shared.$networks
+            .map { networks in
+                Self.menuBarSymbol(for: networks)
+            }
+            .removeDuplicates()
+            .sink { [weak self] symbol in
+                self?.statusItem.button?.image = NSImage(
+                    systemSymbolName: symbol,
+                    accessibilityDescription: "EasyTier"
+                )
+            }
+            .store(in: &cancellables)
+
         statusItem.button?.isHidden = !AppSettings.shared.showMenuBarIcon
+        statusItem.button?.image = NSImage(
+            systemSymbolName: Self.menuBarSymbol(for: NetworkStore.shared.networks),
+            accessibilityDescription: "EasyTier"
+        )
+    }
+
+    private static func menuBarSymbol(for networks: [VirtualNetwork]) -> String {
+        if networks.contains(where: { $0.status == .connected }) {
+            return "antenna.radiowaves.left.and.right"
+        }
+        if networks.contains(where: { $0.status == .connecting }) {
+            return "dot.radiowaves.left.and.right"
+        }
+        return "antenna.radiowaves.left.and.right.slash"
     }
 
     @objc private func showMenu() {
+        refreshPeerCacheInBackground()
         rebuildMenu()
         guard let button = statusItem.button else { return }
         menu.popUp(positioning: nil, at: CGPoint(x: 0, y: button.bounds.height), in: button)
+    }
+
+    /// 窗口关闭期间不再轮询节点；改为用户点开菜单时按需刷新一次，
+    /// 本次菜单显示缓存数据，下次点开即为最新。
+    private func refreshPeerCacheInBackground() {
+        let connected = NetworkStore.shared.networks.filter { $0.status == .connected }
+        guard !connected.isEmpty else { return }
+        Task {
+            if let peers = try? await EasyTierService.shared.getPeerList(connectedNetworks: connected) {
+                EasyTierService.shared.updatePeerCache(peers)
+            }
+        }
     }
 
     private func rebuildMenu() {

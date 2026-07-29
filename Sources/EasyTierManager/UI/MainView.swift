@@ -3,106 +3,52 @@ import SwiftUI
 struct MainView: View {
     @EnvironmentObject var navigationVM: NavigationVM
 
-    @State private var asyncSelection: NavigationVM.Nav = .connections
+    var body: some View {
+        NavigationSplitView {
+            sidebar
+        } detail: {
+            navigationVM.selection.getView()
+                .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(minWidth: 800, minHeight: 600)
+    }
+
+    private var sidebar: some View {
+        List(selection: $navigationVM.selection) {
+            ForEach(NavigationVM.Nav.allCases) { nav in
+                Label(nav.displayName, systemImage: nav.icon)
+                    .tag(nav)
+            }
+        }
+        .listStyle(.sidebar)
+        .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
+        .safeAreaInset(edge: .bottom) {
+            Text(Bundle.main.versionStr)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Theme.Spacing.sm)
+        }
+        .background(KeyboardShortcuts(selection: $navigationVM.selection))
+    }
+}
+
+/// 保留 ⌘1 / ⌘2 / ⌘3 页面切换快捷键。
+/// 快捷键必须挂在参与渲染的 Button 上，这里用零尺寸透明按钮承载。
+private struct KeyboardShortcuts: View {
+    @Binding var selection: NavigationVM.Nav
 
     var body: some View {
-        return HStack(spacing: 0) {
-            ZStack {
-                Rectangle()
-                    .fill(.ultraThickMaterial)
-
-                HStack {
-                    VStack {
-                        Button(action: {}) {
-                            Text(" ")
-                        }
-
-                        Spacer()
-                    }
-                    Spacer()
-                }
-                .opacity(0)
-
-                VStack(spacing: 12) {
-                    ForEach(NavigationVM.Nav.grouped, id: \.id) { group in
-                        VStack(spacing: 2) {
-                            if !group.title.isEmpty {
-                                HStack {
-                                    Text(group.title)
-                                        .font(.system(size: 10))
-                                        .opacity(0.6)
-                                    Spacer()
-                                }
-                                .padding(.leading, 20)
-                                .padding(.bottom, 2)
-                            }
-
-                            ForEach(group.nav) { nav in
-                                let onSelect = { navigationVM.selection = nav }
-
-                                Button(action: onSelect) {
-                                    Text(nav.displayName)
-                                }
-                                .buttonStyle(
-                                    NavButtonStyle(
-                                        icon: nav.icon,
-                                        isActive: navigationVM.selection == nav
-                                    )
-                                )
-                                .keyboardShortcut(nav.shortcutKey, modifiers: .command)
-                            }
-                        }
-                    }
-
-                    Spacer()
-
-                    Text(" \(Bundle.main.versionStr)")
-                        .opacity(0.5)
-                        .font(.system(size: 12))
-                }
-                .padding(.top, 40)
-                .padding(.vertical)
+        ZStack {
+            ForEach(NavigationVM.Nav.allCases) { nav in
+                Button(action: { selection = nav }) { EmptyView() }
+                    .keyboardShortcut(nav.shortcutKey, modifiers: .command)
             }
-            .frame(width: 200)
-
-            HStack {
-                VStack(spacing: 0) {
-                    HStack {
-                        Image(systemName: asyncSelection.icon)
-                            .font(.system(size: 18, weight: .medium))
-                            .opacity(0.8)
-                            .frame(width: 20)
-
-                        Text(asyncSelection.displayName)
-                            .font(.system(size: 12, weight: .semibold))
-                            .opacity(0.8)
-
-                        Spacer()
-                    }
-                    .frame(height: 52)
-                    .padding(.horizontal)
-                    .background(NSColor.background.color)
-                    .border(width: 1, edges: [.bottom], color: NSColor.border.color)
-
-                    asyncSelection.getView()
-                        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
-                    Spacer(minLength: 0)
-                }
-                .frame(minWidth: 580)
-
-                Spacer(minLength: 0)
-            }
-            .border(width: 1, edges: [.leading], color: NSColor.border.color)
         }
-        .frame(minWidth: 820, minHeight: 620)
-        .background(NSColor.background.color)
-        .onChange(of: navigationVM.selection) { _ in
-            asyncSelection = navigationVM.selection
-        }
-        .onAppear {
-            asyncSelection = navigationVM.selection
-        }
-        .edgesIgnoringSafeArea(.top)
+        .frame(width: 0, height: 0)
+        .opacity(0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
